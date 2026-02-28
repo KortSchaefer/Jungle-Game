@@ -1,0 +1,1099 @@
+import {
+  applyLoadedState,
+  bananaTypes,
+  buyers,
+  buyBuilding,
+  buyOrchard,
+  buyWeirdScienceConverter,
+  buyMaintenance,
+  buyTree,
+  getAutoSellPricePerBanana,
+  getActiveContracts,
+  getAchievementsStatus,
+  getBananaInventory,
+  getCeoEmails,
+  getBuyerCooldownRemainingSeconds,
+  getBuyerEffectivePricePerBanana,
+  getBuyerReputationPercent,
+  getBuyerTypePolicy,
+  getBuildingCost,
+  getCurrentTreeTier,
+  getCurrentQuestStatus,
+  getEffectiveUpgradeCost,
+  getLiveEventStatus,
+  getMarketPricePerBanana,
+  getOrchardStatus,
+  getNextTreeTier,
+  getPrestigeBonuses,
+  getPrestigeGainPreview,
+  getProductionBreakdown,
+  getResearchPointsPerSecond,
+  getResearchTreeNodes,
+  getShippingLanesStatus,
+  getTotalBananasPerSecond,
+  getTreeHarvestSnapshot,
+  getTreeHarvestUpgradesStatus,
+  getWeirdScienceStatus,
+  getTreeCost,
+  getWorkerCost,
+  getMaintenanceCost,
+  getUnlockedBananaTypes,
+  gameState,
+  hireWorker,
+  isBuyerUnlocked,
+  isPrestigeUnlocked,
+  isUpgradePurchased,
+  isUpgradeUnlocked,
+  prestigeReset,
+  purchaseTreeHarvestUpgrade,
+  purchaseUpgrade,
+  resetAllProgress,
+  shakeTreeHarvest,
+  sellBananas,
+  shipToBuyer,
+  clickTreeBanana,
+  subscribe,
+  setAutoSellEnabled,
+  setProductionMode,
+  setAutoSellThreshold,
+  selectShippingLane,
+  unlockNextTreeTier,
+} from "./gameEngine.js";
+import { formatGameNumber } from "./numbers.js";
+import { themedUpgradeNames } from "./researchTree.js";
+import { treeTextures } from "./textureAssets.js";
+import { loadUISettings, setUISettings } from "./settings.js";
+import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
+import { TreeHarvestView } from "./treeHarvestView.js";
+import { renderCeoPanel } from "./components/ceoPanel.js";
+import { renderHudBar } from "./components/hudBar.js";
+import { renderSettingsModal } from "./components/settingsModal.js";
+import { renderTabPanels } from "./components/tabPanels.js";
+
+function formatRequirement(requirement, formatAmount) {
+  if (requirement.type === "totalBananasEarned") {
+    return `Produce total bananas: ${formatAmount(requirement.value)}`;
+  }
+  if (requirement.type === "treesOwned") {
+    return `Own trees: ${formatAmount(requirement.value)}`;
+  }
+  if (requirement.type === "cash") {
+    return `Reach cash: $${formatAmount(requirement.value)}`;
+  }
+  if (requirement.type === "treeTierIndex") {
+    return `Reach tree tier: ${formatAmount(requirement.value + 1)}`;
+  }
+  if (requirement.type === "antimatterBananas") {
+    return `Generate antimatter bananas: ${formatAmount(requirement.value)}`;
+  }
+
+  return "Unknown requirement";
+}
+
+function formatCooldown(seconds) {
+  if (seconds <= 0) {
+    return "Ready";
+  }
+
+  return `${seconds}s remaining`;
+}
+
+function clampShipment(value, min, max) {
+  const n = Math.floor(Number(value) || min);
+  return Math.max(min, Math.min(max, n));
+}
+
+function getCeoLevelProgress(totalBananasEarned) {
+  const total = Math.max(0, Number(totalBananasEarned) || 0);
+  const level = Math.max(1, Math.floor(Math.log10(total + 1)) + 1);
+  const levelStart = level <= 1 ? 0 : 10 ** (level - 1);
+  const levelEnd = 10 ** level;
+  const progress = Math.max(0, Math.min(1, (total - levelStart) / (levelEnd - levelStart)));
+  return { level, progress };
+}
+
+const RENDER_RATE_HZ = 4;
+const RENDER_INTERVAL_MS = Math.floor(1000 / RENDER_RATE_HZ);
+
+function setTextIfChanged(element, value) {
+  if (!element) {
+    return;
+  }
+
+  const next = String(value);
+  if (element.textContent !== next) {
+    element.textContent = next;
+  }
+}
+
+function setHtmlIfChanged(element, value) {
+  if (!element) {
+    return;
+  }
+
+  const next = String(value);
+  if (element.innerHTML !== next) {
+    element.innerHTML = next;
+  }
+}
+
+function setValueIfChanged(element, value) {
+  if (!element) {
+    return;
+  }
+
+  const next = String(value);
+  if (element.value !== next) {
+    element.value = next;
+  }
+}
+
+function setCheckedIfChanged(element, checked) {
+  if (!element) {
+    return;
+  }
+
+  const next = Boolean(checked);
+  if (element.checked !== next) {
+    element.checked = next;
+  }
+}
+
+function setDisabledIfChanged(element, disabled) {
+  if (!element) {
+    return;
+  }
+
+  const next = Boolean(disabled);
+  if (element.disabled !== next) {
+    element.disabled = next;
+  }
+}
+
+function setWidthIfChanged(element, widthPercent) {
+  if (!element) {
+    return;
+  }
+
+  const next = `${widthPercent}%`;
+  if (element.style.width !== next) {
+    element.style.width = next;
+  }
+}
+
+export function mountUI(container) {
+  const settings = loadUISettings();
+
+  container.innerHTML = `
+    <main class="app-shell">
+      ${renderHudBar()}
+      <div class="app-body">
+        ${renderCeoPanel()}
+        ${renderTabPanels()}
+      </div>
+      ${renderSettingsModal()}
+    </main>
+  `;
+
+  const formatAmount = (value) => formatGameNumber(value, numberFormatMode);
+
+  const elements = {
+    bananasText: container.querySelector("#bananasText"),
+    cashText: container.querySelector("#cashText"),
+    bpsText: container.querySelector("#bpsText"),
+    clickYieldText: container.querySelector("#clickYieldText"),
+    buyerBonusText: container.querySelector("#buyerBonusText"),
+    eventNameText: container.querySelector("#eventNameText"),
+    eventDetailText: container.querySelector("#eventDetailText"),
+    debugToggleBtn: container.querySelector("#debugToggleBtn"),
+    resetProgressBtn: container.querySelector("#resetProgressBtn"),
+    debugPanel: container.querySelector("#debugPanel"),
+    debugTickText: container.querySelector("#debugTickText"),
+    debugRenderText: container.querySelector("#debugRenderText"),
+    debugFpsText: container.querySelector("#debugFpsText"),
+    companyNameInput: container.querySelector("#companyNameInput"),
+    ceoLevelText: container.querySelector("#ceoLevelText"),
+    ceoProgressFill: container.querySelector("#ceoProgressFill"),
+    ceoProgressText: container.querySelector("#ceoProgressText"),
+    treesText: container.querySelector("#treesText"),
+    treeTextureImg: container.querySelector("#treeTextureImg"),
+    treeBananaLayer: container.querySelector("#treeBananaLayer"),
+    treeHarvestFxLayer: container.querySelector("#treeHarvestFxLayer"),
+    treeHarvestUpgradesList: container.querySelector("#treeHarvestUpgradesList"),
+    shakeTreeBtn: container.querySelector("#shakeTreeBtn"),
+    quickSellBtn: container.querySelector("#quickSellBtn"),
+    toggleUpgradeTreeBtn: container.querySelector("#toggleUpgradeTreeBtn"),
+    treeUpgradePanel: container.querySelector("#treeUpgradePanel"),
+    treeDebugPanel: container.querySelector("#treeDebugPanel"),
+    treeDebugCountText: container.querySelector("#treeDebugCountText"),
+    treeDebugIntervalText: container.querySelector("#treeDebugIntervalText"),
+    treeDebugAccumulatorText: container.querySelector("#treeDebugAccumulatorText"),
+    treeDebugGoldenText: container.querySelector("#treeDebugGoldenText"),
+    treeRateText: container.querySelector("#treeRateText"),
+    workersText: container.querySelector("#workersText"),
+    workerRateText: container.querySelector("#workerRateText"),
+    hireWorkerBtn: container.querySelector("#hireWorkerBtn"),
+    packingShedText: container.querySelector("#packingShedText"),
+    fertilizerLabText: container.querySelector("#fertilizerLabText"),
+    researchHutText: container.querySelector("#researchHutText"),
+    buyPackingShedBtn: container.querySelector("#buyPackingShedBtn"),
+    buyFertilizerLabBtn: container.querySelector("#buyFertilizerLabBtn"),
+    buyResearchHutBtn: container.querySelector("#buyResearchHutBtn"),
+    treeHealthText: container.querySelector("#treeHealthText"),
+    treeQualityText: container.querySelector("#treeQualityText"),
+    maintenanceBtn: container.querySelector("#maintenanceBtn"),
+    orchardText: container.querySelector("#orchardText"),
+    orchardInfoText: container.querySelector("#orchardInfoText"),
+    buyOrchardBtn: container.querySelector("#buyOrchardBtn"),
+    autoSellToggle: container.querySelector("#autoSellToggle"),
+    autoSellThresholdInput: container.querySelector("#autoSellThresholdInput"),
+    autoSellInfoText: container.querySelector("#autoSellInfoText"),
+    productionModeSelect: container.querySelector("#productionModeSelect"),
+    bananaInventoryList: container.querySelector("#bananaInventoryList"),
+    treesPerSecText: container.querySelector("#treesPerSecText"),
+    workersPerSecText: container.querySelector("#workersPerSecText"),
+    bonusMultipliersText: container.querySelector("#bonusMultipliersText"),
+    currentTierText: container.querySelector("#currentTierText"),
+    nextTierText: container.querySelector("#nextTierText"),
+    tierUnlockCostText: container.querySelector("#tierUnlockCostText"),
+    questTitleText: container.querySelector("#questTitleText"),
+    questRewardText: container.querySelector("#questRewardText"),
+    questProgressLabel: container.querySelector("#questProgressLabel"),
+    questProgressFill: container.querySelector("#questProgressFill"),
+    questCashProgressLabel: container.querySelector("#questCashProgressLabel"),
+    questCashProgressFill: container.querySelector("#questCashProgressFill"),
+    unlockTierBtn: container.querySelector("#unlockTierBtn"),
+    buyTreeBtn: container.querySelector("#buyTreeBtn"),
+    shippingLaneSelect: container.querySelector("#shippingLaneSelect"),
+    laneInfoText: container.querySelector("#laneInfoText"),
+    marketPriceText: container.querySelector("#marketPriceText"),
+    contractsList: container.querySelector("#contractsList"),
+    marketSellAmountInput: container.querySelector("#marketSellAmount"),
+    pipText: container.querySelector("#pipText"),
+    prestigeCountText: container.querySelector("#prestigeCountText"),
+    prestigeBonusText: container.querySelector("#prestigeBonusText"),
+    prestigeUnlockText: container.querySelector("#prestigeUnlockText"),
+    prestigeGainText: container.querySelector("#prestigeGainText"),
+    prestigeBtn: container.querySelector("#prestigeBtn"),
+    researchPointsText: container.querySelector("#researchPointsText"),
+    researchRateText: container.querySelector("#researchRateText"),
+    bananaMatterText: container.querySelector("#bananaMatterText"),
+    exoticPeelParticlesText: container.querySelector("#exoticPeelParticlesText"),
+    antimatterBananasText: container.querySelector("#antimatterBananasText"),
+    antimatterBoostText: container.querySelector("#antimatterBoostText"),
+    quantumReactorText: container.querySelector("#quantumReactorText"),
+    colliderText: container.querySelector("#colliderText"),
+    containmentText: container.querySelector("#containmentText"),
+    buyQuantumReactorBtn: container.querySelector("#buyQuantumReactorBtn"),
+    buyColliderBtn: container.querySelector("#buyColliderBtn"),
+    buyContainmentBtn: container.querySelector("#buyContainmentBtn"),
+    researchTreeGrid: container.querySelector("#researchTreeGrid"),
+    researchDetailName: container.querySelector("#researchDetailName"),
+    researchDetailDesc: container.querySelector("#researchDetailDesc"),
+    researchDetailReq: container.querySelector("#researchDetailReq"),
+    researchDetailCost: container.querySelector("#researchDetailCost"),
+    researchDetailState: container.querySelector("#researchDetailState"),
+    researchBuyBtn: container.querySelector("#researchBuyBtn"),
+    achievementSummaryText: container.querySelector("#achievementSummaryText"),
+    achievementsList: container.querySelector("#achievementsList"),
+    ceoInboxList: container.querySelector("#ceoInboxList"),
+    upgradeNameCatalog: container.querySelector("#upgradeNameCatalog"),
+    openSettingsBtn: container.querySelector("#openSettingsBtn"),
+    closeSettingsBtn: container.querySelector("#closeSettingsBtn"),
+    settingsModal: container.querySelector("#settingsModal"),
+    autosaveToggle: container.querySelector("#autosaveToggle"),
+    numberFormatSelect: container.querySelector("#numberFormatSelect"),
+    soundToggle: container.querySelector("#soundToggle"),
+    treeDebugToggle: container.querySelector("#treeDebugToggle"),
+    saveSlotSelect: container.querySelector("#saveSlotSelect"),
+    saveSlotSummaryText: container.querySelector("#saveSlotSummaryText"),
+    saveNowBtn: container.querySelector("#saveNowBtn"),
+    loadSlotBtn: container.querySelector("#loadSlotBtn"),
+    exportSaveBtn: container.querySelector("#exportSaveBtn"),
+    showImportBtn: container.querySelector("#showImportBtn"),
+    importSaveWrap: container.querySelector("#importSaveWrap"),
+    importSaveInput: container.querySelector("#importSaveInput"),
+    confirmImportBtn: container.querySelector("#confirmImportBtn"),
+    cancelImportBtn: container.querySelector("#cancelImportBtn"),
+  };
+
+  let numberFormatMode = settings.numberFormat;
+  let debugPanelVisible = false;
+  let treeDebugVisible = false;
+
+  const treeHarvestView = new TreeHarvestView({
+    bananaLayer: elements.treeBananaLayer,
+    fxLayer: elements.treeHarvestFxLayer,
+    onBananaClick: (bananaId) => clickTreeBanana(bananaId, { source: "manual_click" }),
+  });
+  if (elements.treeTextureImg) {
+    elements.treeTextureImg.setAttribute("draggable", "false");
+    elements.treeTextureImg.addEventListener("dragstart", (event) => event.preventDefault());
+  }
+
+  elements.companyNameInput.value = settings.companyName;
+  elements.autosaveToggle.checked = settings.autosaveEnabled;
+  elements.numberFormatSelect.value = settings.numberFormat;
+  elements.soundToggle.checked = settings.soundEnabled;
+  if (elements.treeDebugToggle) {
+    elements.treeDebugToggle.checked = Boolean(settings.treeDebugEnabled);
+  }
+  elements.saveSlotSelect.value = String(settings.activeSaveSlot || 1);
+
+  const tabButtons = Array.from(container.querySelectorAll(".tab-btn"));
+  const panels = Array.from(container.querySelectorAll(".tab-panel"));
+
+  function setActiveTab(tabId) {
+    tabButtons.forEach((button) => {
+      const isActive = button.dataset.tabTarget === tabId;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
+    });
+
+    panels.forEach((panel) => {
+      panel.classList.toggle("is-active", panel.id === tabId);
+    });
+  }
+
+  tabButtons.forEach((button) => {
+    button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
+  });
+
+  function openSettingsModal() {
+    elements.settingsModal.classList.remove("is-hidden");
+  }
+
+  function closeSettingsModal() {
+    elements.settingsModal.classList.add("is-hidden");
+  }
+
+  elements.openSettingsBtn.addEventListener("click", openSettingsModal);
+  elements.closeSettingsBtn.addEventListener("click", closeSettingsModal);
+  elements.settingsModal.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement && target.dataset.closeSettings === "true") {
+      closeSettingsModal();
+    }
+  });
+
+  elements.companyNameInput.addEventListener("change", () => {
+    const companyName = elements.companyNameInput.value.trim();
+    const next = setUISettings({ companyName });
+    elements.companyNameInput.value = next.companyName;
+  });
+
+  elements.autosaveToggle.addEventListener("change", () => {
+    setUISettings({ autosaveEnabled: elements.autosaveToggle.checked });
+  });
+
+  elements.numberFormatSelect.addEventListener("change", () => {
+    const next = setUISettings({ numberFormat: elements.numberFormatSelect.value });
+    settings.numberFormat = next.numberFormat;
+    numberFormatMode = next.numberFormat;
+  });
+
+  elements.soundToggle.addEventListener("change", () => {
+    const next = setUISettings({ soundEnabled: elements.soundToggle.checked });
+    settings.soundEnabled = next.soundEnabled;
+  });
+
+  if (elements.treeDebugToggle) {
+    elements.treeDebugToggle.addEventListener("change", () => {
+      const next = setUISettings({ treeDebugEnabled: elements.treeDebugToggle.checked });
+      settings.treeDebugEnabled = next.treeDebugEnabled;
+    });
+  }
+
+  elements.debugToggleBtn.addEventListener("click", () => {
+    debugPanelVisible = !debugPanelVisible;
+    elements.debugPanel.classList.toggle("is-hidden", !debugPanelVisible);
+    elements.debugToggleBtn.textContent = debugPanelVisible ? "Hide Debug" : "Debug";
+  });
+
+  elements.resetProgressBtn.addEventListener("click", async () => {
+    const shouldReset = window.confirm("Reset all progress in the active save slot? This cannot be undone.");
+    if (!shouldReset) {
+      return;
+    }
+
+    resetAllProgress();
+    const slotId = Number(elements.saveSlotSelect.value) || 1;
+    await saveGameToSlot(slotId, gameState);
+    await refreshSaveSummary();
+  });
+
+  const refreshSaveSummary = async () => {
+    const slotId = Number(elements.saveSlotSelect.value) || 1;
+    const summaries = await getSaveSlotsSummary();
+    const summary = summaries.find((item) => item.slotId === slotId);
+    if (!summary?.exists) {
+      elements.saveSlotSummaryText.textContent = `Slot ${slotId}: Empty`;
+      return;
+    }
+
+    const savedDate = summary.savedAt ? new Date(summary.savedAt).toLocaleString() : "Unknown";
+    elements.saveSlotSummaryText.textContent = `Slot ${slotId}: ${savedDate} | Bananas ${formatAmount(summary.bananas)} | Cash $${formatAmount(summary.cash)} | Trees ${formatAmount(summary.treesOwned)}`;
+  };
+
+  elements.saveSlotSelect.addEventListener("change", async () => {
+    const slotId = Number(elements.saveSlotSelect.value) || 1;
+    const next = setUISettings({ activeSaveSlot: slotId });
+    settings.activeSaveSlot = next.activeSaveSlot;
+    await refreshSaveSummary();
+  });
+
+  elements.saveNowBtn.addEventListener("click", async () => {
+    const slotId = Number(elements.saveSlotSelect.value) || 1;
+    await saveGameToSlot(slotId, gameState);
+    await refreshSaveSummary();
+  });
+
+  elements.loadSlotBtn.addEventListener("click", async () => {
+    const slotId = Number(elements.saveSlotSelect.value) || 1;
+    const loadedState = await loadGameFromSlot(slotId);
+    if (loadedState) {
+      applyLoadedState(loadedState);
+    }
+    await refreshSaveSummary();
+  });
+
+  elements.exportSaveBtn.addEventListener("click", async () => {
+    const slotId = Number(elements.saveSlotSelect.value) || 1;
+    const json = await exportSlotJson(slotId);
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(json);
+        elements.saveSlotSummaryText.textContent = `Slot ${slotId}: Save JSON copied to clipboard.`;
+      } catch (_error) {
+        elements.saveSlotSummaryText.textContent = "Clipboard permission denied. Copy manually from import box.";
+      }
+    } else {
+      elements.saveSlotSummaryText.textContent = "Clipboard API unavailable in this environment.";
+    }
+  });
+
+  elements.showImportBtn.addEventListener("click", () => {
+    elements.importSaveWrap.classList.remove("is-hidden");
+  });
+
+  elements.cancelImportBtn.addEventListener("click", () => {
+    elements.importSaveWrap.classList.add("is-hidden");
+    elements.importSaveInput.value = "";
+  });
+
+  elements.confirmImportBtn.addEventListener("click", async () => {
+    const slotId = Number(elements.saveSlotSelect.value) || 1;
+    try {
+      const importedState = await importSlotJson(slotId, elements.importSaveInput.value);
+      applyLoadedState(importedState);
+      elements.importSaveWrap.classList.add("is-hidden");
+      elements.importSaveInput.value = "";
+      await refreshSaveSummary();
+    } catch (_error) {
+      elements.saveSlotSummaryText.textContent = "Import failed: invalid or unsupported save JSON.";
+    }
+  });
+
+  refreshSaveSummary();
+
+  setHtmlIfChanged(
+    elements.upgradeNameCatalog,
+    themedUpgradeNames
+      .map((upgradeName, index) => `<p>${index + 1}. ${upgradeName}</p>`)
+      .join("")
+  );
+
+  elements.shakeTreeBtn.addEventListener("click", () => {
+    const result = shakeTreeHarvest();
+    if (!result?.success) {
+      return;
+    }
+
+    if (elements.treeTextureImg) {
+      elements.treeTextureImg.classList.remove("is-shaking");
+      void elements.treeTextureImg.offsetWidth;
+      elements.treeTextureImg.classList.add("is-shaking");
+      window.setTimeout(() => {
+        elements.treeTextureImg.classList.remove("is-shaking");
+      }, 420);
+    }
+
+    treeHarvestView.dropAllBananas();
+  });
+  elements.quickSellBtn.addEventListener("click", () => {
+    sellBananas(25);
+  });
+  elements.toggleUpgradeTreeBtn.addEventListener("click", () => {
+    elements.treeUpgradePanel.classList.toggle("is-hidden");
+  });
+  container.querySelector("#sellBtn").addEventListener("click", () => {
+    sellBananas(Math.max(1, Math.floor(Number(elements.marketSellAmountInput.value) || 1)));
+  });
+  elements.buyTreeBtn.addEventListener("click", () => buyTree());
+  elements.hireWorkerBtn.addEventListener("click", () => hireWorker());
+  elements.buyPackingShedBtn.addEventListener("click", () => buyBuilding("packing_shed"));
+  elements.buyFertilizerLabBtn.addEventListener("click", () => buyBuilding("fertilizer_lab"));
+  elements.buyResearchHutBtn.addEventListener("click", () => buyBuilding("research_hut"));
+  elements.buyQuantumReactorBtn.addEventListener("click", () => buyWeirdScienceConverter("quantum_reactor"));
+  elements.buyColliderBtn.addEventListener("click", () => buyWeirdScienceConverter("collider"));
+  elements.buyContainmentBtn.addEventListener("click", () => buyWeirdScienceConverter("containment"));
+  elements.maintenanceBtn.addEventListener("click", () => buyMaintenance());
+  if (elements.buyOrchardBtn) {
+    elements.buyOrchardBtn.addEventListener("click", () => buyOrchard());
+  }
+  elements.unlockTierBtn.addEventListener("click", () => unlockNextTreeTier());
+  elements.prestigeBtn.addEventListener("click", () => prestigeReset());
+  elements.autoSellToggle.addEventListener("change", () => setAutoSellEnabled(elements.autoSellToggle.checked));
+  elements.autoSellThresholdInput.addEventListener("change", () => {
+    setAutoSellThreshold(elements.autoSellThresholdInput.value);
+  });
+  elements.productionModeSelect.addEventListener("change", () => {
+    setProductionMode(elements.productionModeSelect.value);
+  });
+  elements.shippingLaneSelect.addEventListener("change", () => {
+    selectShippingLane(elements.shippingLaneSelect.value);
+  });
+
+  elements.treeHarvestUpgradesList.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const button = target.closest("button[data-harvest-upgrade-id]");
+    if (!button) {
+      return;
+    }
+    const upgradeId = button.dataset.harvestUpgradeId;
+    if (upgradeId) {
+      purchaseTreeHarvestUpgrade(upgradeId);
+    }
+  });
+
+  const buyersList = container.querySelector("#buyersList");
+  const buyerElements = new Map();
+
+  const buyerTierOrder = ["Local", "Corporate", "Global", "Interstellar", "Cosmic"];
+  const buyersByTier = new Map(buyerTierOrder.map((tier) => [tier, []]));
+  buyers.forEach((buyer) => {
+    const tier = buyerTierOrder.includes(buyer.tierGroup) ? buyer.tierGroup : "Local";
+    buyersByTier.get(tier).push(buyer);
+  });
+
+  buyerTierOrder.forEach((tier) => {
+    const heading = document.createElement("div");
+    heading.className = "buyer-card";
+    heading.innerHTML = `<p class="buyer-name">${tier} Buyers</p>`;
+    buyersList.appendChild(heading);
+    const tierBuyers = buyersByTier.get(tier) || [];
+    tierBuyers.forEach((buyer) => {
+    const card = document.createElement("div");
+    card.className = "buyer-card";
+    card.innerHTML = `
+      <p class="buyer-name">${buyer.logoEmoji || "M"} ${buyer.name}</p>
+      <p>${buyer.flavorText || "No profile on file."}</p>
+      <p class="buyer-status" id="status-${buyer.id}">Status: Locked</p>
+      <p>Requirement: ${formatRequirement(buyer.unlockRequirement, formatAmount)}</p>
+      <p id="price-${buyer.id}">Price: $0 / banana</p>
+      <p id="rep-${buyer.id}">Reputation: 0 / 100</p>
+      <p id="cooldown-${buyer.id}">Cooldown: Ready</p>
+      <div class="shipment-controls" id="controls-${buyer.id}">
+        <select id="type-${buyer.id}" title="Banana type for shipment"></select>
+        <input id="slider-${buyer.id}" type="range" min="${buyer.minShipment}" max="${buyer.maxShipment}" value="${buyer.minShipment}" title="Shipment amount" />
+        <input id="input-${buyer.id}" type="number" min="${buyer.minShipment}" max="${buyer.maxShipment}" step="1" value="${buyer.minShipment}" />
+        <button id="ship-${buyer.id}" type="button" title="Ship bananas to this buyer">Ship</button>
+      </div>
+    `;
+
+      buyersList.appendChild(card);
+
+      const slider = card.querySelector(`#slider-${buyer.id}`);
+      const input = card.querySelector(`#input-${buyer.id}`);
+      const typeSelect = card.querySelector(`#type-${buyer.id}`);
+      const shipButton = card.querySelector(`#ship-${buyer.id}`);
+      const controls = card.querySelector(`#controls-${buyer.id}`);
+      const status = card.querySelector(`#status-${buyer.id}`);
+      const cooldown = card.querySelector(`#cooldown-${buyer.id}`);
+      const price = card.querySelector(`#price-${buyer.id}`);
+      const reputation = card.querySelector(`#rep-${buyer.id}`);
+
+      const syncShipmentInput = (value) => {
+        const clamped = clampShipment(value, buyer.minShipment, buyer.maxShipment);
+        slider.value = String(clamped);
+        input.value = String(clamped);
+        return clamped;
+      };
+
+      slider.addEventListener("input", () => syncShipmentInput(slider.value));
+      input.addEventListener("change", () => syncShipmentInput(input.value));
+      shipButton.addEventListener("click", () => shipToBuyer(buyer.id, syncShipmentInput(input.value), typeSelect.value));
+
+      buyerElements.set(buyer.id, {
+        card,
+        status,
+        cooldown,
+        controls,
+        input,
+        typeSelect,
+        price,
+        reputation,
+        shipButton,
+        syncShipmentInput,
+        requirement: buyer.unlockRequirement,
+      });
+    });
+  });
+
+  const researchNodes = getResearchTreeNodes();
+  let selectedResearchNodeId = researchNodes[0]?.id || null;
+  const researchNodeElements = new Map();
+
+  researchNodes.forEach((node) => {
+    const nodeButton = document.createElement("button");
+    nodeButton.type = "button";
+    nodeButton.className = "research-node";
+    nodeButton.style.gridColumn = String(node.col + 1);
+    nodeButton.style.gridRow = String(node.row + 1);
+    nodeButton.textContent = node.name;
+    nodeButton.addEventListener("click", () => {
+      selectedResearchNodeId = node.id;
+    });
+    elements.researchTreeGrid.appendChild(nodeButton);
+    researchNodeElements.set(node.id, nodeButton);
+  });
+
+  elements.researchBuyBtn.addEventListener("click", () => {
+    if (selectedResearchNodeId) {
+      purchaseUpgrade(selectedResearchNodeId);
+    }
+  });
+
+  const buyerTypeOptionsCache = new Map();
+
+  const renderUI = (state) => {
+    const fmt = (value) => formatGameNumber(value, numberFormatMode);
+
+    const bananasPerSecond = getTotalBananasPerSecond();
+    const breakdown = getProductionBreakdown();
+    const treeHarvestSnapshot = getTreeHarvestSnapshot();
+    const treeHarvestUpgrades = getTreeHarvestUpgradesStatus();
+    const unlockedTypes = getUnlockedBananaTypes();
+    const inventory = getBananaInventory();
+    const currentTier = getCurrentTreeTier();
+    const nextTier = getNextTreeTier();
+    const treeCost = getTreeCost();
+    const workerCost = getWorkerCost();
+    const maintenanceCost = getMaintenanceCost();
+    const packingShedCost = getBuildingCost("packing_shed");
+    const fertilizerLabCost = getBuildingCost("fertilizer_lab");
+    const researchHutCost = getBuildingCost("research_hut");
+    const questStatus = getCurrentQuestStatus();
+
+    setTextIfChanged(elements.bananasText, fmt(state.bananas));
+    setTextIfChanged(elements.cashText, `$${fmt(state.cash)}`);
+    setTextIfChanged(elements.bpsText, fmt(bananasPerSecond));
+    setTextIfChanged(elements.clickYieldText, fmt(state.clickYield));
+    setTextIfChanged(elements.treesText, `Trees Owned: ${fmt(state.treesOwned)}`);
+    setTextIfChanged(elements.treeRateText, `Each tree: ${fmt(state.bananasPerTreePerSecond)} bananas/sec`);
+    const treeTextureIndex = Math.max(0, Math.min(treeTextures.length - 1, Math.floor(Number(state.treeTierIndex) || 0)));
+    const treeTextureSrc = treeTextures[treeTextureIndex];
+    if (elements.treeTextureImg && elements.treeTextureImg.getAttribute("src") !== treeTextureSrc) {
+      elements.treeTextureImg.setAttribute("src", treeTextureSrc);
+    }
+    treeHarvestView.render(treeHarvestSnapshot);
+    treeDebugVisible = Boolean(settings.treeDebugEnabled);
+    elements.treeDebugPanel.classList.toggle("is-hidden", !treeDebugVisible);
+    if (treeDebugVisible) {
+      setTextIfChanged(elements.treeDebugCountText, `Bananas on tree: ${fmt(treeHarvestSnapshot.bananasOnTree.length)} / ${fmt(treeHarvestSnapshot.maxBananasOnTree)}`);
+      setTextIfChanged(elements.treeDebugIntervalText, `Spawn interval: ${fmt(treeHarvestSnapshot.spawnInterval)}s`);
+      setTextIfChanged(elements.treeDebugAccumulatorText, `Spawn accumulator: ${fmt(treeHarvestSnapshot.spawnAccumulator)}s`);
+      setTextIfChanged(elements.treeDebugGoldenText, `Golden chance: ${fmt(treeHarvestSnapshot.goldenChance * 100)}%`);
+    }
+    if (treeHarvestSnapshot.shakeCooldownRemaining > 0) {
+      setTextIfChanged(elements.shakeTreeBtn, `Shake Tree (${fmt(treeHarvestSnapshot.shakeCooldownRemaining)}s)`);
+      setDisabledIfChanged(elements.shakeTreeBtn, true);
+    } else {
+      setTextIfChanged(elements.shakeTreeBtn, "Shake Tree");
+      setDisabledIfChanged(elements.shakeTreeBtn, treeHarvestSnapshot.bananasOnTree.length <= 0);
+    }
+    setHtmlIfChanged(
+      elements.treeHarvestUpgradesList,
+      treeHarvestUpgrades
+        .map((upgrade) => {
+          const buttonLabel = upgrade.purchased ? "Purchased" : `Buy ($${fmt(upgrade.costCash)})`;
+          const disabled = upgrade.purchased || !upgrade.unlocked || !upgrade.canAfford;
+          const reqText = upgrade.unlocked ? "" : `Requires: ${(upgrade.requires || []).join(", ")}`;
+          return `<div class="buyer-card">
+          <p class="buyer-name">${upgrade.name}</p>
+          <p>${upgrade.description}</p>
+          ${reqText ? `<p>${reqText}</p>` : ""}
+          <button type="button" data-harvest-upgrade-id="${upgrade.id}" ${disabled ? "disabled" : ""}>${buttonLabel}</button>
+        </div>`;
+        })
+        .join("")
+    );
+    setTextIfChanged(elements.workersText, `Workers: ${fmt(state.workersOwned)}`);
+    setTextIfChanged(elements.workerRateText, `Workers/sec: ${fmt(state.bananasPerWorkerPerSecond)}`);
+    setTextIfChanged(elements.treeHealthText, `Health: ${fmt(state.treeHealth)}%`);
+    setTextIfChanged(elements.treeQualityText, `Quality: ${fmt(state.treeQuality)}x`);
+    const orchardStatus = getOrchardStatus();
+    if (elements.orchardText) {
+      setTextIfChanged(
+        elements.orchardText,
+        `Orchards: ${fmt(orchardStatus.orchardsOwned)} (${fmt(orchardStatus.pickRatePerSecond)} picks/sec)`
+      );
+    }
+    if (elements.orchardInfoText) {
+      if (!orchardStatus.milestoneMet) {
+        setTextIfChanged(
+          elements.orchardInfoText,
+          `Locked: Produce ${fmt(orchardStatus.requiredTotalBananasEarned)} total bananas to unlock orchards.`
+        );
+      } else if (!orchardStatus.cashGateMet) {
+        setTextIfChanged(elements.orchardInfoText, `Requirement: Have at least $${fmt(orchardStatus.cashGate)} cash to start orchard ops.`);
+      } else {
+        setTextIfChanged(elements.orchardInfoText, "Unlocked: Orchards automatically pick bananas directly off the tree.");
+      }
+    }
+    if (elements.buyOrchardBtn) {
+      setTextIfChanged(elements.buyOrchardBtn, `Buy Orchard ($${fmt(orchardStatus.cost)})`);
+      const disabled = !orchardStatus.milestoneMet || !orchardStatus.cashGateMet || state.cash < orchardStatus.cost;
+      setDisabledIfChanged(elements.buyOrchardBtn, disabled);
+    }
+    setCheckedIfChanged(elements.autoSellToggle, state.autoSellEnabled);
+    setValueIfChanged(elements.autoSellThresholdInput, state.autoSellThreshold);
+    setValueIfChanged(elements.productionModeSelect, state.productionMode || "highest");
+    setTextIfChanged(elements.autoSellInfoText, `Auto-Sell price: $${fmt(getAutoSellPricePerBanana())} per banana above threshold`);
+    setTextIfChanged(elements.treesPerSecText, `Auto/sec (est): ${fmt(breakdown.autoPerSecEstimated || 0)}`);
+    setTextIfChanged(elements.workersPerSecText, `Worker potential/sec: ${fmt(breakdown.workerPerSec)}`);
+    setTextIfChanged(
+      elements.bonusMultipliersText,
+      `Bonuses: Production ${fmt(breakdown.productionMultiplier)}x, Export ${fmt(breakdown.exportPriceMultiplier)}x, Antimatter Export ${fmt(
+        breakdown.antimatterExportMultiplier
+      )}x, Quality ${fmt(breakdown.qualityMultiplier)}x, Health ${fmt(breakdown.healthMultiplier)}x`
+    );
+    setHtmlIfChanged(
+      elements.bananaInventoryList,
+      unlockedTypes
+      .map((bananaType) => `<p>${bananaType.name}: ${fmt(inventory[bananaType.id] || 0)}</p>`)
+      .join("")
+    );
+    setTextIfChanged(elements.currentTierText, `Current Tier: ${currentTier.icon || ""} ${currentTier.name}`.trim());
+
+    if (nextTier) {
+      const unlockCost = Number(nextTier.unlockCostCash) || 0;
+      const questComplete = questStatus?.isComplete ?? true;
+      setTextIfChanged(elements.nextTierText, `Next Tier: ${nextTier.icon || ""} ${nextTier.name} (${fmt(nextTier.baseBananasPerSecondPerTree)} base bps/tree)`.trim());
+      setTextIfChanged(elements.tierUnlockCostText, `Unlock cost: $${fmt(unlockCost)}`);
+      setDisabledIfChanged(elements.unlockTierBtn, state.cash < unlockCost || !questComplete);
+      setTextIfChanged(elements.unlockTierBtn, `Unlock Next Tier ($${fmt(unlockCost)})`);
+    } else {
+      setTextIfChanged(elements.nextTierText, "Next Tier: Max tier reached");
+      setTextIfChanged(elements.tierUnlockCostText, "Unlock cost: Complete");
+      setDisabledIfChanged(elements.unlockTierBtn, true);
+      setTextIfChanged(elements.unlockTierBtn, "All Tree Tiers Unlocked");
+    }
+
+    if (questStatus) {
+      const questPct = (questStatus.progressPct * 100).toFixed(1);
+      const cashTarget = Number(nextTier?.unlockCostCash) || 0;
+      const cashPct = cashTarget <= 0 ? 100 : Math.min(100, (state.cash / cashTarget) * 100);
+      setTextIfChanged(elements.questTitleText, `Current quest: ${questStatus.description}`);
+      setTextIfChanged(elements.questRewardText, `Reward: ${questStatus.rewardDescription}`);
+      setTextIfChanged(elements.questProgressLabel, `Quest Progress: ${fmt(questStatus.progress)} / ${fmt(questStatus.target)} (${questPct}%)`);
+      setWidthIfChanged(elements.questProgressFill, questPct);
+      setTextIfChanged(elements.questCashProgressLabel, `Cash Requirement: $${fmt(state.cash)} / $${fmt(cashTarget)} (${cashPct.toFixed(1)}%)`);
+      setWidthIfChanged(elements.questCashProgressFill, cashPct.toFixed(1));
+    } else {
+      setTextIfChanged(elements.questTitleText, "Current quest: All evolutions complete");
+      setTextIfChanged(elements.questRewardText, "Reward: Max evolution reached");
+      setTextIfChanged(elements.questProgressLabel, "Quest Progress: Complete");
+      setWidthIfChanged(elements.questProgressFill, 100);
+      setTextIfChanged(elements.questCashProgressLabel, "Cash Requirement: Complete");
+      setWidthIfChanged(elements.questCashProgressFill, 100);
+    }
+
+    setTextIfChanged(elements.buyTreeBtn, `Buy Tree ($${fmt(treeCost)})`);
+    setDisabledIfChanged(elements.buyTreeBtn, state.cash < treeCost);
+    setTextIfChanged(elements.hireWorkerBtn, `Hire Worker ($${fmt(workerCost)})`);
+    setDisabledIfChanged(elements.hireWorkerBtn, state.cash < workerCost);
+    setTextIfChanged(elements.buyPackingShedBtn, `Buy Packing Shed ($${fmt(packingShedCost)})`);
+    setDisabledIfChanged(elements.buyPackingShedBtn, state.cash < packingShedCost);
+    setTextIfChanged(elements.buyFertilizerLabBtn, `Buy Fertilizer Lab ($${fmt(fertilizerLabCost)})`);
+    setDisabledIfChanged(elements.buyFertilizerLabBtn, state.cash < fertilizerLabCost);
+    setTextIfChanged(elements.buyResearchHutBtn, `Buy Research Hut ($${fmt(researchHutCost)})`);
+    setDisabledIfChanged(elements.buyResearchHutBtn, state.cash < researchHutCost);
+    setTextIfChanged(elements.maintenanceBtn, `Buy Maintenance ($${fmt(maintenanceCost)})`);
+    setDisabledIfChanged(elements.maintenanceBtn, state.cash < maintenanceCost);
+    setTextIfChanged(elements.packingShedText, `Packing Shed Lv ${fmt(state.packingShedLevel)} (+${fmt((state.packedExportBonusMultiplier - 1) * 100)}% export price)`);
+    setTextIfChanged(elements.fertilizerLabText, `Fertilizer Lab Lv ${fmt(state.fertilizerLabLevel)} (tree output boost)`);
+    setTextIfChanged(elements.researchHutText, `Research Hut Lv ${fmt(state.researchHutLevel)} (upgrade discount)`);
+
+    const marketPrice = getMarketPricePerBanana();
+    setTextIfChanged(elements.marketPriceText, `Market price: $${fmt(marketPrice)} per banana`);
+
+    const lanes = getShippingLanesStatus();
+    setHtmlIfChanged(
+      elements.shippingLaneSelect,
+      lanes
+      .map((lane) => `<option value="${lane.id}" ${lane.selected ? "selected" : ""} ${lane.unlocked ? "" : "disabled"}>${lane.name}${lane.unlocked ? "" : " (Locked)"}</option>`)
+      .join("")
+    );
+    const selectedLane = lanes.find((lane) => lane.selected) || lanes[0];
+    if (selectedLane) {
+      setTextIfChanged(elements.laneInfoText, `Lane bonus: +${fmt((selectedLane.priceMultiplier - 1) * 100)}% export price, capacity: ${fmt(selectedLane.capacity)} bananas/shipment`);
+    }
+
+    let bestBuyerBonusPct = 0;
+    buyers.forEach((buyer) => {
+      const refs = buyerElements.get(buyer.id);
+      const unlocked = isBuyerUnlocked(buyer.id);
+      const cooldownRemaining = getBuyerCooldownRemainingSeconds(buyer.id);
+      refs.syncShipmentInput(refs.input.value);
+      const rules = getBuyerTypePolicy(buyer.id);
+      const options = unlockedTypes
+        .map((bananaType, index) => {
+          const accepted = index >= (rules.minAcceptedTypeTier || 0);
+          return `<option value="${bananaType.id}" ${accepted ? "" : "disabled"}>${bananaType.name}${accepted ? "" : " - Rejected"}</option>`;
+        })
+        .join("");
+      if (buyerTypeOptionsCache.get(buyer.id) !== options) {
+        refs.typeSelect.innerHTML = options;
+        buyerTypeOptionsCache.set(buyer.id, options);
+      }
+      if (!refs.typeSelect.value || refs.typeSelect.options[refs.typeSelect.selectedIndex]?.disabled) {
+        const firstAccepted = Array.from(refs.typeSelect.options).find((option) => !option.disabled);
+        if (firstAccepted) {
+          refs.typeSelect.value = firstAccepted.value;
+        }
+      }
+      const selectedType = refs.typeSelect.value || unlockedTypes[0]?.id;
+      const buyerPrice = getBuyerEffectivePricePerBanana(buyer, selectedType);
+
+      if (refs.card) {
+        refs.card.classList.toggle("is-locked", !unlocked);
+      }
+      setTextIfChanged(refs.status, unlocked ? "Status: Unlocked" : "Status: Locked");
+      setTextIfChanged(refs.price, `Price: $${fmt(buyerPrice)} / banana`);
+      setTextIfChanged(refs.reputation, `Reputation: ${fmt(getBuyerReputationPercent(buyer.id))} / 100`);
+      setTextIfChanged(refs.cooldown, `Cooldown: ${formatCooldown(cooldownRemaining)}`);
+      refs.controls.classList.toggle("is-hidden", !unlocked);
+      setDisabledIfChanged(refs.shipButton, !unlocked || cooldownRemaining > 0);
+
+      if (unlocked) {
+        bestBuyerBonusPct = Math.max(bestBuyerBonusPct, ((buyerPrice / marketPrice) - 1) * 100);
+      }
+    });
+
+    const activeContracts = getActiveContracts();
+    setHtmlIfChanged(
+      elements.contractsList,
+      activeContracts.length
+        ? activeContracts
+            .map((contract) => {
+              const buyer = buyers.find((item) => item.id === contract.buyerId);
+              const pct = (contract.progressPct * 100).toFixed(1);
+              const rareText = contract.rewardRareItem ? `, Rare Item: ${contract.rewardRareItem}` : "";
+              return `<div class="buyer-card">
+              <p class="buyer-name">${contract.premium ? "Premium" : "Standard"} Contract - ${buyer?.name || contract.buyerId}</p>
+              <p>Progress: ${fmt(contract.progressBananas)} / ${fmt(contract.targetBananas)} (${pct}%)</p>
+              <div class="progress-wrap"><div class="progress-fill" style="width:${pct}%"></div></div>
+              <p>Time Left: ${formatCooldown(contract.timeRemainingSeconds)}</p>
+              <p>Rewards: $${fmt(contract.rewardCash)} +${fmt(contract.rewardRep)} rep${rareText}</p>
+            </div>`;
+            })
+            .join("")
+        : "<p>No active contracts. New requests will appear shortly.</p>"
+    );
+
+    setTextIfChanged(elements.buyerBonusText, `+${fmt(bestBuyerBonusPct)}%`);
+
+    const liveEvent = getLiveEventStatus();
+    if (liveEvent.activeEventId) {
+      const timerText = liveEvent.remainingSeconds > 0 ? `${formatCooldown(liveEvent.remainingSeconds)}` : "Active";
+      setTextIfChanged(elements.eventNameText, `Event: ${liveEvent.activeEventName} (${timerText})`);
+      setTextIfChanged(elements.eventDetailText, liveEvent.activeEventDescription);
+    } else {
+      setTextIfChanged(elements.eventNameText, `Event: No active event (next roll in ${formatCooldown(liveEvent.nextRollSeconds)})`);
+      setTextIfChanged(elements.eventDetailText, "Prepare cash, maintenance, and reputation for the next market event.");
+    }
+
+    const prestigeUnlocked = isPrestigeUnlocked();
+    const prestigeGain = getPrestigeGainPreview();
+    const prestigeBonuses = getPrestigeBonuses();
+    setTextIfChanged(elements.pipText, `PIP: ${fmt(state.pip)}`);
+    setTextIfChanged(elements.prestigeCountText, `Prestige Resets: ${fmt(state.prestigeCount)}`);
+    setTextIfChanged(elements.prestigeBonusText, `Permanent bonus: +${fmt((prestigeBonuses.productionMultiplier - 1) * 100)}% production, +${fmt((prestigeBonuses.exportPriceMultiplier - 1) * 100)}% export price, +${fmt((prestigeBonuses.clickMultiplier - 1) * 100)}% click yield`);
+    setTextIfChanged(
+      elements.prestigeUnlockText,
+      prestigeUnlocked
+      ? "Unlock condition: Met."
+      : "Unlock condition: Reach Quantum Banana Reactor tier or 1.00M total bananas earned."
+    );
+    setTextIfChanged(elements.prestigeGainText, `Reset gain: +${fmt(prestigeGain)} PIP`);
+    setDisabledIfChanged(elements.prestigeBtn, !prestigeUnlocked || prestigeGain <= 0);
+
+    const ceo = getCeoLevelProgress(state.totalBananasEarned);
+    setTextIfChanged(elements.ceoLevelText, `Level ${ceo.level}`);
+    setWidthIfChanged(elements.ceoProgressFill, (ceo.progress * 100).toFixed(2));
+    setTextIfChanged(elements.ceoProgressText, `${(ceo.progress * 100).toFixed(1)}% to next level`);
+
+    setTextIfChanged(elements.researchPointsText, `Research Points: ${fmt(state.researchPoints)}`);
+    setTextIfChanged(elements.researchRateText, `RP/sec: ${fmt(getResearchPointsPerSecond())}`);
+
+    const weirdScience = getWeirdScienceStatus();
+    setTextIfChanged(elements.bananaMatterText, `Banana Matter: ${fmt(weirdScience.resources.bananaMatter)}`);
+    setTextIfChanged(elements.exoticPeelParticlesText, `Exotic Peel Particles: ${fmt(weirdScience.resources.exoticPeelParticles)}`);
+    setTextIfChanged(elements.antimatterBananasText, `Antimatter Bananas: ${fmt(weirdScience.resources.antimatterBananas)}`);
+    setTextIfChanged(elements.antimatterBoostText, `Antimatter Export Boost: ${fmt(weirdScience.antimatterExportMultiplier)}x`);
+
+    const reactor = weirdScience.converters.find((converter) => converter.id === "quantum_reactor");
+    const collider = weirdScience.converters.find((converter) => converter.id === "collider");
+    const containment = weirdScience.converters.find((converter) => converter.id === "containment");
+    if (reactor) {
+      setTextIfChanged(
+        elements.quantumReactorText,
+        `Quantum Reactor Lv ${fmt(reactor.level)} (${fmt(reactor.inputPerSecond)} bananas/sec -> ${fmt(reactor.outputPerSecond)} matter/sec)`
+      );
+      setTextIfChanged(elements.buyQuantumReactorBtn, `Build Reactor ($${fmt(reactor.cost)})`);
+      setDisabledIfChanged(elements.buyQuantumReactorBtn, !reactor.unlocked || state.cash < reactor.cost);
+    }
+    if (collider) {
+      setTextIfChanged(
+        elements.colliderText,
+        `Collider Lv ${fmt(collider.level)} (${fmt(collider.inputPerSecond)} matter/sec -> ${fmt(collider.outputPerSecond)} particles/sec)`
+      );
+      setTextIfChanged(elements.buyColliderBtn, `Build Collider ($${fmt(collider.cost)})`);
+      setDisabledIfChanged(elements.buyColliderBtn, !collider.unlocked || state.cash < collider.cost);
+    }
+    if (containment) {
+      setTextIfChanged(
+        elements.containmentText,
+        `Containment Lv ${fmt(containment.level)} (${fmt(containment.inputPerSecond)} particles/sec -> ${fmt(containment.outputPerSecond)} antimatter/sec)`
+      );
+      setTextIfChanged(elements.buyContainmentBtn, `Build Containment ($${fmt(containment.cost)})`);
+      setDisabledIfChanged(elements.buyContainmentBtn, !containment.unlocked || state.cash < containment.cost);
+    }
+
+    researchNodes.forEach((node) => {
+      const nodeElement = researchNodeElements.get(node.id);
+      const purchased = isUpgradePurchased(node.id);
+      const unlocked = isUpgradeUnlocked(node.id);
+      nodeElement.classList.toggle("is-purchased", purchased);
+      nodeElement.classList.toggle("is-unlocked", unlocked && !purchased);
+      nodeElement.classList.toggle("is-locked", !unlocked && !purchased);
+      nodeElement.classList.toggle("is-selected", selectedResearchNodeId === node.id);
+    });
+
+    const selectedNode = researchNodes.find((node) => node.id === selectedResearchNodeId) || researchNodes[0];
+    if (selectedNode) {
+      const purchased = isUpgradePurchased(selectedNode.id);
+      const unlocked = isUpgradeUnlocked(selectedNode.id);
+      const cost = getEffectiveUpgradeCost(selectedNode.id);
+      const prereqText = selectedNode.prerequisites?.length ? selectedNode.prerequisites.join(", ") : "None";
+      setTextIfChanged(elements.researchDetailName, `${selectedNode.category}: ${selectedNode.name}`);
+      setTextIfChanged(elements.researchDetailDesc, selectedNode.description);
+      setTextIfChanged(elements.researchDetailReq, `Requirements: ${formatRequirement(selectedNode.unlockCondition, fmt)} | Prerequisites: ${prereqText}`);
+      setTextIfChanged(elements.researchDetailCost, `Cost: $${fmt(cost.cash)} + ${fmt(cost.researchPoints)} RP`);
+      if (purchased) {
+        setTextIfChanged(elements.researchDetailState, "State: Purchased");
+        setDisabledIfChanged(elements.researchBuyBtn, true);
+        setTextIfChanged(elements.researchBuyBtn, "Purchased");
+      } else if (!unlocked) {
+        setTextIfChanged(elements.researchDetailState, "State: Locked");
+        setDisabledIfChanged(elements.researchBuyBtn, true);
+        setTextIfChanged(elements.researchBuyBtn, "Locked");
+      } else {
+        const canAfford = state.cash >= cost.cash && state.researchPoints >= cost.researchPoints;
+        setTextIfChanged(elements.researchDetailState, "State: Unlocked");
+        setDisabledIfChanged(elements.researchBuyBtn, !canAfford);
+        setTextIfChanged(elements.researchBuyBtn, `Research ($${fmt(cost.cash)} + ${fmt(cost.researchPoints)} RP)`);
+      }
+    }
+
+    const achievementStatuses = getAchievementsStatus();
+    const unlockedCount = achievementStatuses.filter((achievement) => achievement.unlocked).length;
+    setTextIfChanged(elements.achievementSummaryText, `${fmt(unlockedCount)} / ${fmt(achievementStatuses.length)} unlocked`);
+    setHtmlIfChanged(
+      elements.achievementsList,
+      achievementStatuses
+        .map((achievement) => {
+          const pct = (achievement.progressPct * 100).toFixed(1);
+          return `<div class="buyer-card ${achievement.unlocked ? "is-achievement-unlocked" : ""}">
+          <p class="buyer-name">${achievement.name}</p>
+          <p>${achievement.description}</p>
+          <p>Perk: ${achievement.perk.text}</p>
+          <p>Status: ${achievement.unlocked ? "Unlocked" : `${fmt(achievement.progress)} / ${fmt(achievement.target)}`}</p>
+          <div class="progress-wrap"><div class="progress-fill" style="width:${achievement.unlocked ? 100 : pct}%"></div></div>
+        </div>`;
+        })
+        .join("")
+    );
+
+    const ceoEmails = getCeoEmails();
+    setHtmlIfChanged(
+      elements.ceoInboxList,
+      ceoEmails.length
+        ? ceoEmails
+            .map((email) => `<div class="buyer-card">
+          <p class="buyer-name">${email.subject}</p>
+          <p>${email.body}</p>
+          <p>Received: ${new Date(email.receivedAt).toLocaleString()}</p>
+        </div>`)
+            .join("")
+        : "<p>No CEO emails yet. Hit milestones to unlock inbox messages.</p>"
+    );
+  };
+
+  let latestState = gameState;
+  let renderDirty = true;
+  let lastRenderDurationMs = 0;
+  let renderFps = 0;
+  let fpsWindowFrames = 0;
+  let fpsWindowStart = typeof performance !== "undefined" ? performance.now() : Date.now();
+
+  const renderDebugPanel = () => {
+    if (!debugPanelVisible) {
+      return;
+    }
+
+    setTextIfChanged(elements.debugTickText, `Tick: ${(Number(latestState?.lastTickDurationMs) || 0).toFixed(2)}ms`);
+    setTextIfChanged(elements.debugRenderText, `Render: ${lastRenderDurationMs.toFixed(2)}ms`);
+    setTextIfChanged(elements.debugFpsText, `Render FPS: ${renderFps.toFixed(2)}`);
+  };
+
+  const scheduledRender = () => {
+    if (!renderDirty) {
+      renderDebugPanel();
+      return;
+    }
+
+    const start = typeof performance !== "undefined" ? performance.now() : Date.now();
+    renderUI(latestState);
+    const end = typeof performance !== "undefined" ? performance.now() : Date.now();
+    lastRenderDurationMs = end - start;
+    renderDirty = false;
+    fpsWindowFrames += 1;
+
+    if (end - fpsWindowStart >= 1000) {
+      renderFps = (fpsWindowFrames * 1000) / Math.max(1, end - fpsWindowStart);
+      fpsWindowFrames = 0;
+      fpsWindowStart = end;
+    }
+
+    renderDebugPanel();
+  };
+
+  const unsubscribe = subscribe((state) => {
+    latestState = state;
+    renderDirty = true;
+  });
+
+  const renderTimer = window.setInterval(scheduledRender, RENDER_INTERVAL_MS);
+  scheduledRender();
+
+  return () => {
+    window.clearInterval(renderTimer);
+    treeHarvestView.destroy();
+    unsubscribe();
+  };
+}
