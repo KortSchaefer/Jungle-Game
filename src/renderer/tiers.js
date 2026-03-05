@@ -4,7 +4,7 @@ export const farmEvolutions = Object.freeze([
     name: "Backyard Tree",
     icon: "T1",
     baseBananasPerSecondPerTree: 0.2,
-    harvest: { spawnIntervalMultiplier: 1, maxBananasBonus: 0, clickYieldMultiplier: 1, workerPickMultiplier: 1, goldenChanceAdd: 0, goldenMultiplierAdd: 0, shakeCooldownMultiplier: 1 },
+    harvest: { spawnIntervalMultiplier: 1, maxBananasBonus: 0, clickYieldMultiplier: 1, workerPickMultiplier: 1, goldenChanceAdd: 0, goldenMultiplierAdd: 0, diamondChanceAdd: 0, diamondMultiplierAdd: 0, shakeCooldownMultiplier: 1 },
     unlockCostCash: 0,
     quest: null,
     reward: { type: "none", description: "Starting setup" },
@@ -14,7 +14,7 @@ export const farmEvolutions = Object.freeze([
     name: "Small Orchard",
     icon: "T2",
     baseBananasPerSecondPerTree: 0.45,
-    harvest: { spawnIntervalMultiplier: 0.92, maxBananasBonus: 2, clickYieldMultiplier: 1.05, workerPickMultiplier: 1.08, goldenChanceAdd: 0, goldenMultiplierAdd: 0, shakeCooldownMultiplier: 0.95 },
+    harvest: { spawnIntervalMultiplier: 0.92, maxBananasBonus: 2, clickYieldMultiplier: 1.05, workerPickMultiplier: 1.08, goldenChanceAdd: 0, goldenMultiplierAdd: 0, diamondChanceAdd: 0, diamondMultiplierAdd: 0, shakeCooldownMultiplier: 0.95 },
     unlockCostCash: 150,
     quest: {
       id: "q_small_orchard",
@@ -33,7 +33,7 @@ export const farmEvolutions = Object.freeze([
     name: "Commercial Farm",
     icon: "T3",
     baseBananasPerSecondPerTree: 1.1,
-    harvest: { spawnIntervalMultiplier: 0.85, maxBananasBonus: 4, clickYieldMultiplier: 1.12, workerPickMultiplier: 1.16, goldenChanceAdd: 0.01, goldenMultiplierAdd: 2, shakeCooldownMultiplier: 0.9 },
+    harvest: { spawnIntervalMultiplier: 0.85, maxBananasBonus: 4, clickYieldMultiplier: 1.12, workerPickMultiplier: 1.16, goldenChanceAdd: 0.01, goldenMultiplierAdd: 2, diamondChanceAdd: 0, diamondMultiplierAdd: 0, shakeCooldownMultiplier: 0.9 },
     unlockCostCash: 600,
     quest: {
       id: "q_commercial_farm",
@@ -53,7 +53,7 @@ export const farmEvolutions = Object.freeze([
     name: "Mega Plantation",
     icon: "T4",
     baseBananasPerSecondPerTree: 2.6,
-    harvest: { spawnIntervalMultiplier: 0.77, maxBananasBonus: 6, clickYieldMultiplier: 1.2, workerPickMultiplier: 1.28, goldenChanceAdd: 0.02, goldenMultiplierAdd: 4, shakeCooldownMultiplier: 0.85 },
+    harvest: { spawnIntervalMultiplier: 0.77, maxBananasBonus: 6, clickYieldMultiplier: 1.2, workerPickMultiplier: 1.28, goldenChanceAdd: 0.02, goldenMultiplierAdd: 4, diamondChanceAdd: 0, diamondMultiplierAdd: 0, shakeCooldownMultiplier: 0.85 },
     unlockCostCash: 2500,
     quest: {
       id: "q_mega_plantation",
@@ -72,7 +72,7 @@ export const farmEvolutions = Object.freeze([
     name: "Tropical Bio-Dome",
     icon: "T5",
     baseBananasPerSecondPerTree: 6.2,
-    harvest: { spawnIntervalMultiplier: 0.68, maxBananasBonus: 8, clickYieldMultiplier: 1.35, workerPickMultiplier: 1.45, goldenChanceAdd: 0.03, goldenMultiplierAdd: 6, shakeCooldownMultiplier: 0.8 },
+    harvest: { spawnIntervalMultiplier: 0.68, maxBananasBonus: 8, clickYieldMultiplier: 1.35, workerPickMultiplier: 1.45, goldenChanceAdd: 0.03, goldenMultiplierAdd: 6, diamondChanceAdd: 0, diamondMultiplierAdd: 0, shakeCooldownMultiplier: 0.8 },
     unlockCostCash: 10000,
     quest: {
       id: "q_tropical_bio_dome",
@@ -92,7 +92,7 @@ export const farmEvolutions = Object.freeze([
     name: "Quantum Banana Reactor",
     icon: "T6",
     baseBananasPerSecondPerTree: 14.5,
-    harvest: { spawnIntervalMultiplier: 0.6, maxBananasBonus: 10, clickYieldMultiplier: 1.55, workerPickMultiplier: 1.7, goldenChanceAdd: 0.05, goldenMultiplierAdd: 10, shakeCooldownMultiplier: 0.75 },
+    harvest: { spawnIntervalMultiplier: 0.6, maxBananasBonus: 10, clickYieldMultiplier: 1.55, workerPickMultiplier: 1.7, goldenChanceAdd: 0.05, goldenMultiplierAdd: 10, diamondChanceAdd: 0, diamondMultiplierAdd: 0, shakeCooldownMultiplier: 0.75 },
     unlockCostCash: 45000,
     quest: {
       id: "q_quantum_banana_reactor",
@@ -111,7 +111,7 @@ export const farmEvolutions = Object.freeze([
     name: "Antimatter Banana Singularity",
     icon: "T7",
     baseBananasPerSecondPerTree: 35,
-    harvest: { spawnIntervalMultiplier: 0.52, maxBananasBonus: 14, clickYieldMultiplier: 1.9, workerPickMultiplier: 2.1, goldenChanceAdd: 0.08, goldenMultiplierAdd: 18, shakeCooldownMultiplier: 0.7 },
+    harvest: { spawnIntervalMultiplier: 0.52, maxBananasBonus: 14, clickYieldMultiplier: 1.9, workerPickMultiplier: 2.1, goldenChanceAdd: 0.08, goldenMultiplierAdd: 18, diamondChanceAdd: 0, diamondMultiplierAdd: 0, shakeCooldownMultiplier: 0.7 },
     unlockCostCash: 200000,
     quest: {
       id: "q_antimatter_banana_singularity",

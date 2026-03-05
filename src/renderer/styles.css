@@ -22,7 +22,7 @@ body {
   background: linear-gradient(160deg, #e8f1e6 0%, var(--bg) 55%, #e3efe2 100%);
   color: var(--text);
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  padding: 1rem;
+  padding: 0.7rem;
 }
 
 h1,
@@ -50,7 +50,7 @@ h4 {
 }
 
 .app-shell {
-  width: min(1200px, 100%);
+  width: min(1800px, 100%);
   margin: 0 auto;
   display: grid;
   gap: 0.9rem;
@@ -126,7 +126,7 @@ h4 {
 
 .app-body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 0.9rem;
 }
 
@@ -147,6 +147,25 @@ h4 {
   display: grid;
   gap: 0.6rem;
   align-content: start;
+}
+
+.player-stats-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 0.55rem 0.6rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.player-stats-card h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.1rem;
+}
+
+.player-stats-card p {
+  font-size: 0.84rem;
+  color: var(--text-muted);
 }
 
 .avatar-placeholder {
@@ -218,10 +237,11 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+  justify-content: flex-end;
 }
 
 .tab-panel {
-  display: none;
+  display: grid;
   gap: 0.75rem;
 }
 
@@ -229,7 +249,6 @@ textarea {
   display: grid;
 }
 
-.tab-btn,
 button,
 .ghost-btn {
   border: 1px solid var(--line-strong);
@@ -242,23 +261,15 @@ button,
   transition: background 100ms ease, transform 100ms ease, border-color 100ms ease;
 }
 
-.tab-btn:hover,
 button:hover,
 .ghost-btn:hover {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
 
-.tab-btn:active,
 button:active,
 .ghost-btn:active {
   transform: scale(0.985);
-}
-
-.tab-btn.is-active {
-  background: #d4e8d1;
-  border-color: var(--accent);
-  font-weight: 600;
 }
 
 button:disabled {
@@ -395,6 +406,15 @@ button:disabled {
   filter: saturate(1.2) brightness(0.98);
 }
 
+.tree-banana.is-diamond {
+  /* No new asset needed: tint the existing banana texture into a "diamond" look. */
+  filter: hue-rotate(185deg) saturate(2.4) brightness(1.25) drop-shadow(0 0 10px rgba(80, 200, 255, 0.55));
+}
+
+.tree-banana.is-diamond:hover {
+  filter: hue-rotate(185deg) saturate(2.4) brightness(1.12) drop-shadow(0 0 10px rgba(80, 200, 255, 0.55));
+}
+
 .tree-banana.is-growing {
   opacity: 0;
 }
@@ -421,6 +441,11 @@ button:disabled {
 
 .tree-harvest-float.is-golden {
   color: #8c5a00;
+}
+
+.tree-harvest-float.is-diamond {
+  color: #066a8a;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.92), 0 0 12px rgba(80, 200, 255, 0.35);
 }
 
 @keyframes bananaGrow {
@@ -471,6 +496,21 @@ button:disabled {
   display: grid;
   gap: 0.45rem;
   margin-top: 0.4rem;
+}
+
+.core-panels {
+  display: grid;
+  grid-template-columns: minmax(620px, 1.05fr) minmax(520px, 0.95fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.core-panel {
+  align-content: start;
+}
+
+.upgrades-panel {
+  margin-top: 0.15rem;
 }
 
 .building-row {
@@ -537,7 +577,7 @@ button:disabled {
 
 .shipment-controls {
   display: grid;
-  grid-template-columns: 170px 1fr 110px auto;
+  grid-template-columns: 1fr 110px auto auto;
   gap: 0.4rem;
   align-items: center;
   margin-top: 0.4rem;
@@ -667,6 +707,10 @@ button:disabled {
 
   .main-column {
     order: 1;
+  }
+
+  .core-panels {
+    grid-template-columns: 1fr;
   }
 }
 

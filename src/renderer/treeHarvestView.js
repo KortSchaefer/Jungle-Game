@@ -54,21 +54,21 @@ export class TreeHarvestView {
 
   #createBananaNode(banana) {
     const node = document.createElement("div");
-    node.className = `tree-banana ${banana.type === "golden" ? "is-golden" : ""}`;
+    node.className = `tree-banana ${banana.type === "golden" ? "is-golden" : ""} ${banana.type === "diamond" ? "is-diamond" : ""}`.trim();
     node.dataset.bananaId = banana.id;
     node.setAttribute("role", "button");
     node.setAttribute("tabindex", "0");
-    node.setAttribute("aria-label", banana.type === "golden" ? "Golden banana" : "Banana");
+    node.setAttribute("aria-label", banana.type === "diamond" ? "Diamond banana" : banana.type === "golden" ? "Golden banana" : "Banana");
     const textureIndex = Math.abs(this.#hashId(banana.id)) % bananaTextures.length;
     node.style.setProperty("--banana-texture", `url("${bananaTextures[textureIndex]}")`);
-    node.title = banana.type === "golden" ? "Golden Banana" : "Banana";
+    node.title = banana.type === "diamond" ? "Diamond Banana" : banana.type === "golden" ? "Golden Banana" : "Banana";
     const handleHarvest = () => {
       const result = this.onBananaClick(banana.id, banana);
       if (!result?.harvestAmount) {
         return;
       }
       node.classList.add("is-popping");
-      this.#spawnHarvestText(result.harvestAmount, banana, banana.type === "golden");
+      this.#spawnHarvestText(result.harvestAmount, banana, banana.type === "golden", banana.type === "diamond");
       window.setTimeout(() => {
         if (node.parentElement) {
           node.remove();
@@ -137,12 +137,12 @@ export class TreeHarvestView {
     }, 360);
   }
 
-  #spawnHarvestText(amount, banana, isGolden) {
+  #spawnHarvestText(amount, banana, isGolden, isDiamond) {
     if (!this.fxLayer) {
       return;
     }
     const text = document.createElement("div");
-    text.className = `tree-harvest-float ${isGolden ? "is-golden" : ""}`;
+    text.className = `tree-harvest-float ${isDiamond ? "is-diamond" : isGolden ? "is-golden" : ""}`.trim();
     text.style.left = toPercent(banana.x);
     text.style.top = toPercent(Math.max(0, banana.y - 4));
     text.textContent = `+${Number(amount).toFixed(2).replace(/\.00$/, "")}`;

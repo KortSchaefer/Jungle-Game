@@ -5,8 +5,10 @@ const DEFAULT_TREE_STATE = Object.freeze({
   maxBananasOnTree: 12,
   spawnInterval: 1.5,
   clickHarvestYield: 1,
-  goldenChance: 0,
-  goldenMultiplier: 8,
+  goldenChance: 0.005,
+  goldenMultiplier: 35,
+  diamondChance: 0.0005,
+  diamondMultiplier: 200,
   monkeyPickerInterval: 0,
   monkeyPickerAccumulator: 0,
   workerPickerAccumulator: 0,
@@ -50,7 +52,7 @@ function normalizeBanana(rawBanana) {
   const size = clamp(sanitizeNumber(rawBanana.size, 1), 0.75, 1.35);
   const rotation = clamp(sanitizeNumber(rawBanana.rotation, 0), -36, 36);
   const spawnTime = sanitizeNumber(rawBanana.spawnTime, Date.now());
-  const type = rawBanana.type === "golden" ? "golden" : "standard";
+  const type = rawBanana.type === "diamond" ? "diamond" : rawBanana.type === "golden" ? "golden" : "standard";
   const id = String(rawBanana.id || "");
   if (!id) {
     return null;
@@ -94,6 +96,8 @@ export class TreeHarvestSystem {
       clickHarvestYield: Math.max(1, sanitizeNumber(merged.clickHarvestYield, DEFAULT_TREE_STATE.clickHarvestYield)),
       goldenChance: clamp(sanitizeNumber(merged.goldenChance, DEFAULT_TREE_STATE.goldenChance), 0, 0.95),
       goldenMultiplier: Math.max(1, sanitizeNumber(merged.goldenMultiplier, DEFAULT_TREE_STATE.goldenMultiplier)),
+      diamondChance: clamp(sanitizeNumber(merged.diamondChance, DEFAULT_TREE_STATE.diamondChance), 0, 0.2),
+      diamondMultiplier: Math.max(1, sanitizeNumber(merged.diamondMultiplier, DEFAULT_TREE_STATE.diamondMultiplier)),
       monkeyPickerInterval: Math.max(0, sanitizeNumber(merged.monkeyPickerInterval, DEFAULT_TREE_STATE.monkeyPickerInterval)),
       monkeyPickerAccumulator: Math.max(0, sanitizeNumber(merged.monkeyPickerAccumulator, DEFAULT_TREE_STATE.monkeyPickerAccumulator)),
       workerPickerAccumulator: Math.max(0, sanitizeNumber(merged.workerPickerAccumulator, 0)),
@@ -114,6 +118,8 @@ export class TreeHarvestSystem {
       clickHarvestYield: this.state.clickHarvestYield,
       goldenChance: this.state.goldenChance,
       goldenMultiplier: this.state.goldenMultiplier,
+      diamondChance: this.state.diamondChance,
+      diamondMultiplier: this.state.diamondMultiplier,
       monkeyPickerInterval: this.state.monkeyPickerInterval,
       monkeyPickerAccumulator: this.state.monkeyPickerAccumulator,
       workerPickerAccumulator: this.state.workerPickerAccumulator,
@@ -130,6 +136,8 @@ export class TreeHarvestSystem {
     this.state.clickHarvestYield = Math.max(1, sanitizeNumber(modifiers.clickHarvestYield, this.state.clickHarvestYield));
     this.state.goldenChance = clamp(sanitizeNumber(modifiers.goldenChance, this.state.goldenChance), 0, 0.95);
     this.state.goldenMultiplier = Math.max(1, sanitizeNumber(modifiers.goldenMultiplier, this.state.goldenMultiplier));
+    this.state.diamondChance = clamp(sanitizeNumber(modifiers.diamondChance, this.state.diamondChance), 0, 0.2);
+    this.state.diamondMultiplier = Math.max(1, sanitizeNumber(modifiers.diamondMultiplier, this.state.diamondMultiplier));
     this.state.monkeyPickerInterval = Math.max(0, sanitizeNumber(modifiers.monkeyPickerInterval, this.state.monkeyPickerInterval));
     this.state.shakeCooldownSeconds = clamp(sanitizeNumber(modifiers.shakeCooldownSeconds, this.state.shakeCooldownSeconds), 3, 180);
     if (this.state.bananasOnTree.length > this.state.maxBananasOnTree) {
@@ -147,6 +155,8 @@ export class TreeHarvestSystem {
       clickHarvestYield: this.state.clickHarvestYield,
       goldenChance: this.state.goldenChance,
       goldenMultiplier: this.state.goldenMultiplier,
+      diamondChance: this.state.diamondChance,
+      diamondMultiplier: this.state.diamondMultiplier,
       monkeyPickerInterval: this.state.monkeyPickerInterval,
       workerPickerAccumulator: this.state.workerPickerAccumulator,
       orchardPickerAccumulator: this.state.orchardPickerAccumulator,
@@ -242,7 +252,13 @@ export class TreeHarvestSystem {
       return null;
     }
 
-    const bananaType = this.random() < this.state.goldenChance ? "golden" : "standard";
+    const roll = this.random();
+    let bananaType = "standard";
+    if (roll < this.state.diamondChance) {
+      bananaType = "diamond";
+    } else if (roll < this.state.diamondChance + this.state.goldenChance) {
+      bananaType = "golden";
+    }
     const banana = {
       id: `tree-banana-${this.state.nextBananaId}`,
       x: position.x,
@@ -265,7 +281,7 @@ export class TreeHarvestSystem {
     }
 
     const [banana] = this.state.bananasOnTree.splice(index, 1);
-    const multiplier = banana.type === "golden" ? this.state.goldenMultiplier : 1;
+    const multiplier = banana.type === "diamond" ? this.state.diamondMultiplier : banana.type === "golden" ? this.state.goldenMultiplier : 1;
     const harvestAmount = this.state.clickHarvestYield * multiplier;
     this.onHarvest(harvestAmount, banana, context);
     this._changed = true;

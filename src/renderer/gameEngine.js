@@ -6,7 +6,7 @@ import { TreeHarvestSystem, getDefaultTreeState } from "./treeHarvestSystem.js";
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 5;
+export const GAME_STATE_SCHEMA_VERSION = 6;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
@@ -18,14 +18,6 @@ const PRESTIGE_UNLOCK_TIER_INDEX = 5;
 // This is intentionally later than workers so the early loop stays click + worker driven.
 const ORCHARD_UNLOCK_MILESTONE_ID = "milestone_industry";
 const ORCHARD_UNLOCK_CASH_REQUIREMENT = 2500;
-
-const TREE_HEALTH_DECAY_PER_SECOND = 0.08;
-const TREE_QUALITY_DECAY_PER_SECOND = 0.0015;
-const MIN_TREE_HEALTH_MULTIPLIER = 0.2;
-const MIN_TREE_HEALTH = 0;
-const MAX_TREE_HEALTH = 100;
-const MIN_TREE_QUALITY = 0.5;
-const MAX_TREE_QUALITY = 2;
 
 const WORKER_COST_GROWTH = 1.15;
 const BUILDING_COST_GROWTH = 1.35;
@@ -99,12 +91,6 @@ const timedEvents = Object.freeze({
     description: "+10% export price for 60s.",
     durationMs: 60_000,
   },
-  storm_damage: {
-    id: "storm_damage",
-    name: "Storm Damage",
-    description: "-15% farm output until maintenance is paid.",
-    durationMs: 0,
-  },
   shark_investor_visit: {
     id: "shark_investor_visit",
     name: "Shark Investor Visit",
@@ -131,12 +117,7 @@ const ceoEmailTemplates = Object.freeze([
 ]);
 
 export const bananaTypes = Object.freeze([
-  { id: "standard", name: "Standard", unlockTierIndex: 0, marketMultiplier: 1 },
-  { id: "organic", name: "Organic", unlockTierIndex: 1, marketMultiplier: 1.2 },
-  { id: "golden", name: "Golden", unlockTierIndex: 2, marketMultiplier: 1.6 },
-  { id: "cryo", name: "Cryo", unlockTierIndex: 3, marketMultiplier: 2.2 },
-  { id: "quantum", name: "Quantum", unlockTierIndex: 5, marketMultiplier: 3.2 },
-  { id: "antimatter", name: "Antimatter", unlockTierIndex: 6, marketMultiplier: 4.6 },
+  { id: "standard", name: "Bananas", unlockTierIndex: 0, marketMultiplier: 1 },
 ]);
 
 const BUILDING_TYPES = Object.freeze({
@@ -250,34 +231,6 @@ export const buyers = Object.freeze([
 ]);
 
 const bananaTypeById = new Map(bananaTypes.map((bananaType) => [bananaType.id, bananaType]));
-const bananaTypeTierIndex = new Map(bananaTypes.map((bananaType, index) => [bananaType.id, index]));
-const buyerTypeRules = Object.freeze({
-  squirrel_market: { minAcceptedTypeTier: 0, preferredMultipliers: { organic: 1.08 } },
-  raccoon_roadside: { minAcceptedTypeTier: 0, preferredMultipliers: { organic: 1.1, golden: 1.2 } },
-  beaver_bazaar: { minAcceptedTypeTier: 0, preferredMultipliers: { organic: 1.08, golden: 1.12 } },
-  otter_outlet: { minAcceptedTypeTier: 0, preferredMultipliers: { organic: 1.09, cryo: 1.15 } },
-  badger_bodega: { minAcceptedTypeTier: 1, preferredMultipliers: { golden: 1.18 } },
-  parrot_traders: { minAcceptedTypeTier: 1, preferredMultipliers: { organic: 1.15, golden: 1.18 } },
-  gorilla_wholesale: { minAcceptedTypeTier: 1, preferredMultipliers: { golden: 1.22, cryo: 1.3 } },
-  penguin_freight: { minAcceptedTypeTier: 2, preferredMultipliers: { cryo: 1.32 } },
-  elephant_exports: { minAcceptedTypeTier: 2, preferredMultipliers: { golden: 1.2, quantum: 1.35 } },
-  wolf_logistics: { minAcceptedTypeTier: 3, preferredMultipliers: { cryo: 1.25, quantum: 1.4 } },
-  octopus_shipping: { minAcceptedTypeTier: 3, preferredMultipliers: { quantum: 1.42 } },
-  shark_investment_group: { minAcceptedTypeTier: 4, preferredMultipliers: { quantum: 1.5, antimatter: 1.7 } },
-  falcon_air_cargo: { minAcceptedTypeTier: 4, preferredMultipliers: { quantum: 1.52, antimatter: 1.72 } },
-  tiger_commodities: { minAcceptedTypeTier: 4, preferredMultipliers: { quantum: 1.56, antimatter: 1.8 } },
-  rhino_bulk_terminals: { minAcceptedTypeTier: 4, preferredMultipliers: { antimatter: 1.86 } },
-  dragon_galactic_logistics: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 2 } },
-  phoenix_orbital_freight: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 2.08 } },
-  manta_nebula_haulers: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 2.18 } },
-  lynx_lunar_exchange: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 2.24 } },
-  orca_star_port: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 2.3 } },
-  nebula_exchange: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 2.4 } },
-  void_whale_consortium: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 2.75 } },
-  kraken_event_horizon: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 3.1 } },
-  chimp_multiverse_holdings: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 3.5 } },
-  celestial_serpent_arbitrage: { minAcceptedTypeTier: 5, preferredMultipliers: { antimatter: 4 } },
-});
 
 export const upgrades = researchTreeNodes;
 
@@ -300,8 +253,8 @@ const treeHarvestUpgradeById = new Map(TREE_HARVEST_UPGRADES.map((upgrade) => [u
 
 const treeHarvestSystem = new TreeHarvestSystem({
   onHarvest: (harvestAmount, banana, context) => {
-    const typeId = banana?.type === "golden" ? "golden" : null;
-    addBananas(harvestAmount, typeId);
+    // Tree special bananas are yield multipliers, not inventory product types.
+    addBananas(harvestAmount, null);
     if (context?.source === "shake_tree") {
       gameState.totalClicks += 1;
     }
@@ -315,7 +268,7 @@ function getDefaultUpgradeModifiers() {
 const DEFAULT_STATE = Object.freeze({
   schemaVersion: GAME_STATE_SCHEMA_VERSION,
   bananas: 0,
-  bananaInventory: { standard: 0, organic: 0, golden: 0, cryo: 0, quantum: 0, antimatter: 0 },
+  bananaInventory: { standard: 0 },
   productionMode: "highest",
   tree: getDefaultTreeState(),
   purchasedTreeHarvestUpgradeIds: [],
@@ -335,8 +288,6 @@ const DEFAULT_STATE = Object.freeze({
   exportCooldownMultiplier: 1,
   packedExportBonusMultiplier: 1,
   evolutionProductionMultiplier: 1,
-  treeQuality: 1,
-  treeHealth: 100,
   treeBaseCost: 25,
   treeCostGrowth: TREE_COST_GROWTH,
   workerBaseCost: 40,
@@ -608,6 +559,11 @@ function migrateLoadedState(rawState) {
     migrated.orchardCostGrowth = DEFAULT_STATE.orchardCostGrowth;
     migrated.orchardPickRatePerSecondPerOrchard = DEFAULT_STATE.orchardPickRatePerSecondPerOrchard;
   }
+  if (sourceSchemaVersion < 6) {
+    // v6 removes the tree condition (quality/health) system.
+    delete migrated.treeQuality;
+    delete migrated.treeHealth;
+  }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
   return migrated;
@@ -721,10 +677,6 @@ function getAntimatterExportBoostMultiplier() {
   return stabilizeNumber(1 + Math.log10(antimatter + 1) * 4);
 }
 
-function getTreeHealthMultiplier() {
-  return clamp(gameState.treeHealth / 100, MIN_TREE_HEALTH_MULTIPLIER, 1);
-}
-
 function recomputeDerivedStats() {
   const upgradeModifiers = gameState.purchasedUpgradeIds.reduce((current, upgradeId) => {
     const upgrade = upgradeById.get(upgradeId);
@@ -732,13 +684,11 @@ function recomputeDerivedStats() {
   }, getDefaultUpgradeModifiers());
 
   const prestigeBonuses = getPrestigeBonuses();
-  const fertilizerMultiplier = getFertilizerLabMultiplier();
   const packingMultiplier = getPackingShedMultiplier();
   const achievementMultipliers = getAchievementMultipliers();
   const treeHarvestModifiers = getTreeHarvestModifiers();
-  const stormMultiplier = isEventActive("storm_damage") ? 0.85 : 1;
 
-  gameState.productionMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * fertilizerMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * stormMultiplier));
+  gameState.productionMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier));
   gameState.clickMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier));
   gameState.exportPriceMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.exportPriceMultiplier * prestigeBonuses.exportPriceMultiplier * packingMultiplier * achievementMultipliers.exportPriceMultiplier));
   gameState.exportCooldownMultiplier = Math.max(0.1, stabilizeNumber(upgradeModifiers.exportCooldownMultiplier));
@@ -746,9 +696,7 @@ function recomputeDerivedStats() {
 
   const tier = treeTiers[gameState.treeTierIndex];
   const tierHarvest = tier?.harvest || {};
-  const qualityMultiplier = clamp(gameState.treeQuality, MIN_TREE_QUALITY, MAX_TREE_QUALITY);
-  const healthMultiplier = getTreeHealthMultiplier();
-  gameState.bananasPerTreePerSecond = stabilizeNumber(tier.baseBananasPerSecondPerTree * gameState.productionMultiplier * qualityMultiplier * healthMultiplier);
+  gameState.bananasPerTreePerSecond = stabilizeNumber(tier.baseBananasPerSecondPerTree * gameState.productionMultiplier);
 
   const workerBase = clampNonNegative(Number(gameState.workersBasePerSecond) || DEFAULT_STATE.workersBasePerSecond);
   const workerPrestigeMultiplier = 1 + Math.max(0, gameState.pip) * 0.005;
@@ -759,17 +707,28 @@ function recomputeDerivedStats() {
   const treeCapacityBonusFromTrees = Math.floor(ownedTrees * 0.75);
   // Trees speed up spawn with diminishing returns so we don't instantly hit the hard min spawnInterval clamp.
   const spawnIntervalMultiplierFromTrees = 1 / (1 + Math.sqrt(ownedTrees) * 0.14);
+  const fertilizerLabLevel = getBuildingLevel("fertilizer_lab");
+  const fertilizerSpawnMultiplier = 1 / (1 + fertilizerLabLevel * 0.06);
+  const fertilizerCapacityBonus = Math.floor(fertilizerLabLevel * 0.5);
 
   treeHarvestSystem.applyModifiers({
     spawnInterval:
       1.5 *
       (Number(tierHarvest.spawnIntervalMultiplier) || 1) *
       treeHarvestModifiers.spawnIntervalMultiplier *
-      spawnIntervalMultiplierFromTrees,
-    maxBananasOnTree: 12 + (Number(tierHarvest.maxBananasBonus) || 0) + treeHarvestModifiers.maxBananasFlat + treeCapacityBonusFromTrees,
+      spawnIntervalMultiplierFromTrees *
+      fertilizerSpawnMultiplier,
+    maxBananasOnTree:
+      12 +
+      (Number(tierHarvest.maxBananasBonus) || 0) +
+      treeHarvestModifiers.maxBananasFlat +
+      treeCapacityBonusFromTrees +
+      fertilizerCapacityBonus,
     clickHarvestYield: gameState.clickYield * (Number(tierHarvest.clickYieldMultiplier) || 1) * treeHarvestModifiers.clickYieldMultiplier,
-    goldenChance: (Number(tierHarvest.goldenChanceAdd) || 0) + treeHarvestModifiers.goldenChanceAdd,
-    goldenMultiplier: 8 + (Number(tierHarvest.goldenMultiplierAdd) || 0) + treeHarvestModifiers.goldenMultiplierAdd,
+    goldenChance: 0.005 + (Number(tierHarvest.goldenChanceAdd) || 0) + treeHarvestModifiers.goldenChanceAdd,
+    goldenMultiplier: 35 + (Number(tierHarvest.goldenMultiplierAdd) || 0) + treeHarvestModifiers.goldenMultiplierAdd,
+    diamondChance: 0.0005 + (Number(tierHarvest.diamondChanceAdd) || 0) + treeHarvestModifiers.diamondChanceAdd,
+    diamondMultiplier: 200 + (Number(tierHarvest.diamondMultiplierAdd) || 0) + treeHarvestModifiers.diamondMultiplierAdd,
     monkeyPickerInterval: treeHarvestModifiers.monkeyPickerInterval,
     shakeCooldownSeconds: 35 * (Number(tierHarvest.shakeCooldownMultiplier) || 1) * treeHarvestModifiers.shakeCooldownMultiplier,
   });
@@ -826,7 +785,6 @@ function clearActiveEvent(now = Date.now()) {
 function triggerTimedEvent(now = Date.now()) {
   const eventPool = [
     timedEvents.squirrel_market_surge,
-    timedEvents.storm_damage,
     timedEvents.shark_investor_visit,
   ];
   const selectedEvent = eventPool[Math.floor(Math.random() * eventPool.length)];
@@ -937,6 +895,8 @@ function getTreeHarvestModifiers() {
     workerPickMultiplier: 1,
     goldenChanceAdd: 0,
     goldenMultiplierAdd: 0,
+    diamondChanceAdd: 0,
+    diamondMultiplierAdd: 0,
     monkeyPickerInterval: 0,
     shakeCooldownMultiplier: 1,
   };
@@ -964,6 +924,12 @@ function getTreeHarvestModifiers() {
     }
     if (effect.goldenMultiplierAdd) {
       modifiers.goldenMultiplierAdd += effect.goldenMultiplierAdd;
+    }
+    if (effect.diamondChanceAdd) {
+      modifiers.diamondChanceAdd += effect.diamondChanceAdd;
+    }
+    if (effect.diamondMultiplierAdd) {
+      modifiers.diamondMultiplierAdd += effect.diamondMultiplierAdd;
     }
     if (effect.monkeyPickerInterval) {
       modifiers.monkeyPickerInterval = modifiers.monkeyPickerInterval
@@ -1274,43 +1240,39 @@ function notifyListeners() {
 }
 
 function getUnlockedBananaTypesInternal() {
-  return bananaTypes.filter((bananaType) => gameState.treeTierIndex >= bananaType.unlockTierIndex);
+  return bananaTypes;
 }
 
 function getHighestUnlockedBananaTypeId() {
-  const unlocked = getUnlockedBananaTypesInternal();
-  return (unlocked[unlocked.length - 1] || bananaTypes[0]).id;
+  return "standard";
 }
 
 function syncTotalBananasFromInventory() {
-  gameState.bananas = stabilizeNumber(
-    bananaTypes.reduce((total, bananaType) => total + clampNonNegative(gameState.bananaInventory[bananaType.id] || 0), 0)
-  );
+  gameState.bananas = clampNonNegative(Number(gameState.bananas) || 0);
+  gameState.bananaInventory.standard = gameState.bananas;
 }
 
 function addBananasToType(typeId, amount) {
-  const safeTypeId = bananaTypeById.has(typeId) ? typeId : "standard";
   const safeAmount = clampNonNegative(Number(amount) || 0);
   if (safeAmount <= 0) {
     return;
   }
 
-  gameState.bananaInventory[safeTypeId] = addStable(gameState.bananaInventory[safeTypeId] || 0, safeAmount);
+  gameState.bananas = addStable(gameState.bananas, safeAmount);
+  gameState.bananaInventory.standard = gameState.bananas;
   gameState.totalBananasEarned = addStable(gameState.totalBananasEarned, safeAmount);
-  syncTotalBananasFromInventory();
 }
 
 function removeBananasFromType(typeId, amount) {
-  const safeTypeId = bananaTypeById.has(typeId) ? typeId : "standard";
   const safeAmount = clampNonNegative(Number(amount) || 0);
   if (safeAmount <= 0) {
     return 0;
   }
 
-  const available = clampNonNegative(gameState.bananaInventory[safeTypeId] || 0);
+  const available = clampNonNegative(gameState.bananas || 0);
   const used = Math.min(available, safeAmount);
-  gameState.bananaInventory[safeTypeId] = stabilizeNumber(available - used);
-  syncTotalBananasFromInventory();
+  gameState.bananas = stabilizeNumber(available - used);
+  gameState.bananaInventory.standard = gameState.bananas;
   return used;
 }
 
@@ -1320,14 +1282,8 @@ function removeBananasAny(amount) {
     return 0;
   }
 
-  // Spend lower-tier inventory first to preserve higher-value types.
-  for (const bananaType of bananaTypes) {
-    if (remaining <= 0) {
-      break;
-    }
-    const used = removeBananasFromType(bananaType.id, remaining);
-    remaining = stabilizeNumber(remaining - used);
-  }
+  const used = removeBananasFromType("standard", remaining);
+  remaining = stabilizeNumber(remaining - used);
 
   return stabilizeNumber((Number(amount) || 0) - remaining);
 }
@@ -1338,15 +1294,7 @@ function addBananas(amount, typeId = null) {
     return;
   }
 
-  const unlockedTypes = getUnlockedBananaTypesInternal();
-  if (gameState.productionMode === "blend" && unlockedTypes.length > 1) {
-    const splitAmount = safeAmount / unlockedTypes.length;
-    unlockedTypes.forEach((bananaType) => addBananasToType(bananaType.id, splitAmount));
-    return;
-  }
-
-  const targetTypeId = typeId || getHighestUnlockedBananaTypeId();
-  addBananasToType(targetTypeId, safeAmount);
+  addBananasToType("standard", safeAmount);
 }
 
 function removeBananas(amount) {
@@ -1400,17 +1348,6 @@ function removeCash(amount) {
   gameState.cash = clampNonNegative(addStable(gameState.cash, -amount));
 }
 
-function updateTreeVitals(elapsedSeconds) {
-  const fertilizerDecayProtection = 1 - Math.min(0.4, getBuildingLevel("fertilizer_lab") * 0.04);
-  const healthDecay = TREE_HEALTH_DECAY_PER_SECOND * fertilizerDecayProtection * elapsedSeconds;
-  gameState.treeHealth = clamp(stabilizeNumber(gameState.treeHealth - healthDecay), MIN_TREE_HEALTH, MAX_TREE_HEALTH);
-
-  if (gameState.treeHealth < 60) {
-    const qualityDecay = TREE_QUALITY_DECAY_PER_SECOND * (1 + (60 - gameState.treeHealth) / 100) * elapsedSeconds;
-    gameState.treeQuality = clamp(stabilizeNumber(gameState.treeQuality - qualityDecay), MIN_TREE_QUALITY, MAX_TREE_QUALITY);
-  }
-}
-
 function performAutoSell() {
   if (!gameState.autoSellEnabled) {
     return 0;
@@ -1435,7 +1372,10 @@ function getEstimatedAutoBananasPerSecond() {
   const clickYield = Math.max(1, Number(snapshot.clickHarvestYield) || 1);
   const goldenChance = Math.max(0, Math.min(0.95, Number(snapshot.goldenChance) || 0));
   const goldenMultiplier = Math.max(1, Number(snapshot.goldenMultiplier) || 1);
-  const expectedYieldPerPick = clickYield * (1 + goldenChance * (goldenMultiplier - 1));
+  const diamondChance = Math.max(0, Math.min(0.2, Number(snapshot.diamondChance) || 0));
+  const diamondMultiplier = Math.max(1, Number(snapshot.diamondMultiplier) || 1);
+  const expectedYieldPerPick =
+    clickYield * (1 + goldenChance * (goldenMultiplier - 1) + diamondChance * (diamondMultiplier - 1));
 
   const tierHarvest = treeTiers[gameState.treeTierIndex]?.harvest || {};
   const tierWorkerPickMultiplier = Math.max(0.1, Number(tierHarvest.workerPickMultiplier) || 1);
@@ -1489,8 +1429,6 @@ export function getProductionBreakdown() {
     workerPerSec,
     totalPerSec: autoPerSecEstimated,
     autoPerSecEstimated,
-    qualityMultiplier: stabilizeNumber(gameState.treeQuality),
-    healthMultiplier: stabilizeNumber(getTreeHealthMultiplier()),
     productionMultiplier: stabilizeNumber(gameState.productionMultiplier),
     exportPriceMultiplier: stabilizeNumber(gameState.exportPriceMultiplier),
     antimatterExportMultiplier: getAntimatterExportBoostMultiplier(),
@@ -1526,7 +1464,7 @@ export function getCeoEmails() {
 }
 
 export function getBananaInventory() {
-  return { ...gameState.bananaInventory };
+  return { standard: clampNonNegative(gameState.bananas) };
 }
 
 export function getTreeHarvestSnapshot() {
@@ -1589,7 +1527,7 @@ export function purchaseTreeHarvestUpgrade(upgradeId) {
 }
 
 export function setProductionMode(mode) {
-  gameState.productionMode = mode === "blend" ? "blend" : "highest";
+  gameState.productionMode = "highest";
   notifyListeners();
 }
 
@@ -1701,29 +1639,6 @@ export function getWeirdScienceStatus() {
   };
 }
 
-export function getMaintenanceCost() {
-  const base = 30 + gameState.treesOwned * 2 + gameState.workersOwned;
-  return stabilizeNumber(base * (1 + gameState.fertilizerLabLevel * 0.15));
-}
-
-export function buyMaintenance() {
-  const cost = getMaintenanceCost();
-  if (gameState.cash < cost) {
-    return false;
-  }
-
-  removeCash(cost);
-  gameState.treeHealth = clamp(stabilizeNumber(gameState.treeHealth + 18), MIN_TREE_HEALTH, MAX_TREE_HEALTH);
-  gameState.treeQuality = clamp(stabilizeNumber(gameState.treeQuality + 0.02), MIN_TREE_QUALITY, MAX_TREE_QUALITY);
-  if (isEventActive("storm_damage")) {
-    clearActiveEvent(Date.now());
-    gameState.lastEventMessage = "Storm damage repaired via maintenance.";
-  }
-  recomputeDerivedStats();
-  notifyListeners();
-  return true;
-}
-
 export function setAutoSellEnabled(enabled) {
   gameState.autoSellEnabled = Boolean(enabled);
   notifyListeners();
@@ -1790,7 +1705,7 @@ export function applyLoadedState(loadedState = {}) {
     // Backward compatibility for saves before per-type inventory existed.
     gameState.bananaInventory.standard = gameState.bananas;
   }
-  gameState.productionMode = gameState.productionMode === "blend" ? "blend" : "highest";
+  gameState.productionMode = "highest";
   gameState.tree = gameState.tree && typeof gameState.tree === "object" ? gameState.tree : getDefaultTreeState();
   gameState.cash = clampNonNegative(Number(gameState.cash) || 0);
   gameState.treesOwned = clampNonNegative(Number(gameState.treesOwned) || 0);
@@ -1814,8 +1729,6 @@ export function applyLoadedState(loadedState = {}) {
   gameState.pip = clampNonNegative(Math.floor(Number(gameState.pip) || 0));
   gameState.prestigeCount = clampNonNegative(Math.floor(Number(gameState.prestigeCount) || 0));
 
-  gameState.treeQuality = clamp(Number(gameState.treeQuality) || DEFAULT_STATE.treeQuality, MIN_TREE_QUALITY, MAX_TREE_QUALITY);
-  gameState.treeHealth = clamp(Number(gameState.treeHealth) || DEFAULT_STATE.treeHealth, MIN_TREE_HEALTH, MAX_TREE_HEALTH);
   gameState.evolutionProductionMultiplier = Math.max(1, Number(gameState.evolutionProductionMultiplier) || 1);
   gameState.packingShedLevel = clampNonNegative(Math.floor(Number(gameState.packingShedLevel) || 0));
   gameState.fertilizerLabLevel = clampNonNegative(Math.floor(Number(gameState.fertilizerLabLevel) || 0));
@@ -1973,7 +1886,6 @@ export function tick() {
 
   const bananasBeforeTick = gameState.bananas;
   updateTimedEvents(now);
-  updateTreeVitals(elapsedSeconds);
   recomputeDerivedStats();
   addPassiveBananas(elapsedSeconds);
   addPassiveResearchPoints(elapsedSeconds);
@@ -2051,8 +1963,10 @@ export function __testOfflineBananaGain(input = {}) {
 }
 
 export function getMarketPricePerBanana(bananaTypeId = null) {
-  const bananaType = bananaTypeById.get(bananaTypeId || "standard") || bananaTypes[0];
-  return stabilizeNumber(MARKET_PRICE_PER_BANANA * bananaType.marketMultiplier);
+  const tierValueMultipliers = [1, 1.15, 1.35, 1.65, 2.05, 2.6, 3.4];
+  const tierIndex = Math.max(0, Math.min(tierValueMultipliers.length - 1, Math.floor(Number(gameState.treeTierIndex) || 0)));
+  const valueMultiplier = tierValueMultipliers[tierIndex] || 1;
+  return stabilizeNumber(MARKET_PRICE_PER_BANANA * valueMultiplier);
 }
 
 export function getAutoSellPricePerBanana() {
@@ -2071,21 +1985,12 @@ export function sellBananas(amount, bananaTypeId = null) {
     return false;
   }
 
-  const targetTypeId = bananaTypeId && bananaTypeById.has(bananaTypeId) ? bananaTypeId : null;
-  if (targetTypeId && (gameState.bananaInventory[targetTypeId] || 0) < safeAmount) {
-    return false;
-  }
-  if (!targetTypeId && gameState.bananas < safeAmount) {
+  if (gameState.bananas < safeAmount) {
     return false;
   }
 
-  const typeMultiplier = targetTypeId ? bananaTypeById.get(targetTypeId).marketMultiplier : 1;
-  const revenue = safeAmount * MARKET_PRICE_PER_BANANA * typeMultiplier;
-  if (targetTypeId) {
-    removeBananasFromType(targetTypeId, safeAmount);
-  } else {
-    removeBananas(safeAmount);
-  }
+  const revenue = safeAmount * getMarketPricePerBanana();
+  removeBananas(safeAmount);
   addCash(revenue);
   notifyListeners();
   return true;
@@ -2216,21 +2121,16 @@ export function getBuyerCooldownRemainingSeconds(buyerId) {
 }
 
 export function getBuyerEffectivePricePerBanana(buyer, bananaTypeId = null) {
-  const bananaType = bananaTypeById.get(bananaTypeId || getHighestUnlockedBananaTypeId()) || bananaTypes[0];
   const lane = getSelectedShippingLane();
-  const rules = buyerTypeRules[buyer.id] || { minAcceptedTypeTier: 0, preferredMultipliers: {} };
-  const prefBoost = rules.preferredMultipliers?.[bananaType.id] || 1;
   const eventBoost = isEventActive("squirrel_market_surge") ? 1.1 : 1;
   const antimatterBoost = getAntimatterExportBoostMultiplier();
   return stabilizeNumber(
-    MARKET_PRICE_PER_BANANA *
-      bananaType.marketMultiplier *
+    getMarketPricePerBanana() *
       buyer.pricePerBananaMultiplier *
       gameState.exportPriceMultiplier *
       antimatterBoost *
       getBuyerReputationMultiplier(buyer.id) *
       lane.priceMultiplier *
-      prefBoost *
       eventBoost
   );
 }
@@ -2268,10 +2168,9 @@ export function getActiveContracts() {
 }
 
 export function getBuyerTypePolicy(buyerId) {
-  const rules = buyerTypeRules[buyerId] || { minAcceptedTypeTier: 0, preferredMultipliers: {} };
   return {
-    minAcceptedTypeTier: rules.minAcceptedTypeTier || 0,
-    preferredMultipliers: { ...(rules.preferredMultipliers || {}) },
+    minAcceptedTypeTier: 0,
+    preferredMultipliers: {},
   };
 }
 
@@ -2306,29 +2205,20 @@ export function shipToBuyer(buyerId, amount, bananaTypeId = null) {
   }
 
   const shipmentAmount = Math.floor(clampNonNegative(Number(amount) || 0));
-  const shipmentTypeId = bananaTypeById.has(bananaTypeId) ? bananaTypeId : getHighestUnlockedBananaTypeId();
-  const shipmentTypeTier = bananaTypeTierIndex.get(shipmentTypeId) || 0;
-  const buyerRules = buyerTypeRules[buyer.id] || { minAcceptedTypeTier: 0 };
-  if (shipmentTypeTier < (buyerRules.minAcceptedTypeTier || 0)) {
-    changeBuyerReputation(buyerId, -0.4);
-    notifyListeners();
-    return false;
-  }
-
   const lane = getSelectedShippingLane();
   const maxAllowedShipment = Math.min(buyer.maxShipment, Math.max(1, Math.floor(lane.capacity)));
   if (shipmentAmount < buyer.minShipment || shipmentAmount > maxAllowedShipment) {
     return false;
   }
 
-  if ((gameState.bananaInventory[shipmentTypeId] || 0) < shipmentAmount) {
+  if (gameState.bananas < shipmentAmount) {
     changeBuyerReputation(buyerId, -0.8);
     notifyListeners();
     return false;
   }
 
-  const revenue = shipmentAmount * getBuyerEffectivePricePerBanana(buyer, shipmentTypeId);
-  removeBananasFromType(shipmentTypeId, shipmentAmount);
+  const revenue = shipmentAmount * getBuyerEffectivePricePerBanana(buyer);
+  removeBananas(shipmentAmount);
   addCash(revenue);
   gameState.totalShipments += shipmentAmount;
   changeBuyerReputation(buyerId, 0.9);
@@ -2363,8 +2253,6 @@ export function prestigeReset() {
   gameState.workersOwned = 0;
   gameState.orchardsOwned = 0;
   gameState.treeTierIndex = 0;
-  gameState.treeQuality = DEFAULT_STATE.treeQuality;
-  gameState.treeHealth = DEFAULT_STATE.treeHealth;
   gameState.packingShedLevel = 0;
   gameState.fertilizerLabLevel = 0;
   gameState.researchHutLevel = 0;

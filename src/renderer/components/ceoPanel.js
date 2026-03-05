@@ -10,6 +10,16 @@ export function renderCeoPanel() {
         <div id="ceoProgressFill" class="progress-fill"></div>
       </div>
       <p id="ceoProgressText">0%</p>
+      <div class="player-stats-card">
+        <h3>Player Stats</h3>
+        <p id="playerTotalBananasText">Total Bananas: 0</p>
+        <p id="playerTotalCashText">Total Cash: $0</p>
+        <p id="playerTotalClicksText">Total Clicks: 0</p>
+        <p id="playerTotalShipmentsText">Total Shipments: 0</p>
+        <p id="playerContractsText">Contracts Completed: 0</p>
+        <p id="playerTreesWorkersText">Trees / Workers: 0 / 0</p>
+        <p id="playerPrestigeText">Prestige / PIP: 0 / 0</p>
+      </div>
     </aside>
   `;
 }

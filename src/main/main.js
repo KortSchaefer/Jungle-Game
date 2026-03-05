@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs/promises");
+const { autoUpdater } = require("electron-updater");
 
 function getSlotFilePath(slotId) {
   const safeSlot = Number(slotId);
@@ -43,15 +44,70 @@ function registerSaveIpcHandlers() {
   });
 }
 
+function initAutoUpdater(mainWindow) {
+  const isDev = !app.isPackaged || Boolean(process.env.ELECTRON_RENDERER_URL);
+  if (isDev) {
+    return;
+  }
+
+  if (process.platform === "win32" && process.argv.includes("--squirrel-firstrun")) {
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("error", (error) => {
+    console.error("[updater] error", error?.message || error);
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log(`[updater] update available: ${info?.version || "unknown"}`);
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[updater] no updates available");
+  });
+
+  autoUpdater.on("update-downloaded", async (info) => {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      buttons: ["Restart Now", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+      title: "Update Ready",
+      message: `Version ${info?.version || "new"} has been downloaded.`,
+      detail: "Restart now to apply the update.",
+    });
+
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+      console.error("[updater] check failed", error?.message || error);
+    });
+  }, 3500);
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1600,
+    height: 900,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  // Launch in full-screen windowed mode (maximized, not exclusive fullscreen).
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.maximize();
+    mainWindow.show();
   });
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -61,6 +117,8 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "../../dist/renderer/index.html"));
   }
+
+  initAutoUpdater(mainWindow);
 }
 
 app.whenReady().then(() => {

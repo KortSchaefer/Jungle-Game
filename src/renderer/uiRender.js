@@ -1,21 +1,17 @@
 import {
   applyLoadedState,
-  bananaTypes,
   buyers,
   buyBuilding,
   buyOrchard,
   buyWeirdScienceConverter,
-  buyMaintenance,
   buyTree,
   getAutoSellPricePerBanana,
   getActiveContracts,
   getAchievementsStatus,
-  getBananaInventory,
   getCeoEmails,
   getBuyerCooldownRemainingSeconds,
   getBuyerEffectivePricePerBanana,
   getBuyerReputationPercent,
-  getBuyerTypePolicy,
   getBuildingCost,
   getCurrentTreeTier,
   getCurrentQuestStatus,
@@ -36,8 +32,6 @@ import {
   getWeirdScienceStatus,
   getTreeCost,
   getWorkerCost,
-  getMaintenanceCost,
-  getUnlockedBananaTypes,
   gameState,
   hireWorker,
   isBuyerUnlocked,
@@ -54,7 +48,6 @@ import {
   clickTreeBanana,
   subscribe,
   setAutoSellEnabled,
-  setProductionMode,
   setAutoSellThreshold,
   selectShippingLane,
   unlockNextTreeTier,
@@ -215,6 +208,13 @@ export function mountUI(container) {
     ceoLevelText: container.querySelector("#ceoLevelText"),
     ceoProgressFill: container.querySelector("#ceoProgressFill"),
     ceoProgressText: container.querySelector("#ceoProgressText"),
+    playerTotalBananasText: container.querySelector("#playerTotalBananasText"),
+    playerTotalCashText: container.querySelector("#playerTotalCashText"),
+    playerTotalClicksText: container.querySelector("#playerTotalClicksText"),
+    playerTotalShipmentsText: container.querySelector("#playerTotalShipmentsText"),
+    playerContractsText: container.querySelector("#playerContractsText"),
+    playerTreesWorkersText: container.querySelector("#playerTreesWorkersText"),
+    playerPrestigeText: container.querySelector("#playerPrestigeText"),
     treesText: container.querySelector("#treesText"),
     treeTextureImg: container.querySelector("#treeTextureImg"),
     treeBananaLayer: container.querySelector("#treeBananaLayer"),
@@ -239,17 +239,12 @@ export function mountUI(container) {
     buyPackingShedBtn: container.querySelector("#buyPackingShedBtn"),
     buyFertilizerLabBtn: container.querySelector("#buyFertilizerLabBtn"),
     buyResearchHutBtn: container.querySelector("#buyResearchHutBtn"),
-    treeHealthText: container.querySelector("#treeHealthText"),
-    treeQualityText: container.querySelector("#treeQualityText"),
-    maintenanceBtn: container.querySelector("#maintenanceBtn"),
     orchardText: container.querySelector("#orchardText"),
     orchardInfoText: container.querySelector("#orchardInfoText"),
     buyOrchardBtn: container.querySelector("#buyOrchardBtn"),
     autoSellToggle: container.querySelector("#autoSellToggle"),
     autoSellThresholdInput: container.querySelector("#autoSellThresholdInput"),
     autoSellInfoText: container.querySelector("#autoSellInfoText"),
-    productionModeSelect: container.querySelector("#productionModeSelect"),
-    bananaInventoryList: container.querySelector("#bananaInventoryList"),
     treesPerSecText: container.querySelector("#treesPerSecText"),
     workersPerSecText: container.querySelector("#workersPerSecText"),
     bonusMultipliersText: container.querySelector("#bonusMultipliersText"),
@@ -315,6 +310,8 @@ export function mountUI(container) {
     importSaveInput: container.querySelector("#importSaveInput"),
     confirmImportBtn: container.querySelector("#confirmImportBtn"),
     cancelImportBtn: container.querySelector("#cancelImportBtn"),
+    toggleUpgradesBtn: container.querySelector("#toggleUpgradesBtn"),
+    upgradesPanel: container.querySelector("#upgradesPanel"),
   };
 
   let numberFormatMode = settings.numberFormat;
@@ -340,24 +337,14 @@ export function mountUI(container) {
   }
   elements.saveSlotSelect.value = String(settings.activeSaveSlot || 1);
 
-  const tabButtons = Array.from(container.querySelectorAll(".tab-btn"));
-  const panels = Array.from(container.querySelectorAll(".tab-panel"));
-
-  function setActiveTab(tabId) {
-    tabButtons.forEach((button) => {
-      const isActive = button.dataset.tabTarget === tabId;
-      button.classList.toggle("is-active", isActive);
-      button.setAttribute("aria-selected", String(isActive));
-    });
-
-    panels.forEach((panel) => {
-      panel.classList.toggle("is-active", panel.id === tabId);
+  if (elements.toggleUpgradesBtn && elements.upgradesPanel) {
+    elements.toggleUpgradesBtn.addEventListener("click", () => {
+      const isHidden = elements.upgradesPanel.classList.toggle("is-hidden");
+      const isOpen = !isHidden;
+      elements.toggleUpgradesBtn.textContent = isOpen ? "Hide Upgrades" : "Upgrades";
+      elements.toggleUpgradesBtn.setAttribute("aria-expanded", String(isOpen));
     });
   }
-
-  tabButtons.forEach((button) => {
-    button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
-  });
 
   function openSettingsModal() {
     elements.settingsModal.classList.remove("is-hidden");
@@ -537,7 +524,6 @@ export function mountUI(container) {
   elements.buyQuantumReactorBtn.addEventListener("click", () => buyWeirdScienceConverter("quantum_reactor"));
   elements.buyColliderBtn.addEventListener("click", () => buyWeirdScienceConverter("collider"));
   elements.buyContainmentBtn.addEventListener("click", () => buyWeirdScienceConverter("containment"));
-  elements.maintenanceBtn.addEventListener("click", () => buyMaintenance());
   if (elements.buyOrchardBtn) {
     elements.buyOrchardBtn.addEventListener("click", () => buyOrchard());
   }
@@ -546,9 +532,6 @@ export function mountUI(container) {
   elements.autoSellToggle.addEventListener("change", () => setAutoSellEnabled(elements.autoSellToggle.checked));
   elements.autoSellThresholdInput.addEventListener("change", () => {
     setAutoSellThreshold(elements.autoSellThresholdInput.value);
-  });
-  elements.productionModeSelect.addEventListener("change", () => {
-    setProductionMode(elements.productionModeSelect.value);
   });
   elements.shippingLaneSelect.addEventListener("change", () => {
     selectShippingLane(elements.shippingLaneSelect.value);
@@ -597,9 +580,9 @@ export function mountUI(container) {
       <p id="rep-${buyer.id}">Reputation: 0 / 100</p>
       <p id="cooldown-${buyer.id}">Cooldown: Ready</p>
       <div class="shipment-controls" id="controls-${buyer.id}">
-        <select id="type-${buyer.id}" title="Banana type for shipment"></select>
         <input id="slider-${buyer.id}" type="range" min="${buyer.minShipment}" max="${buyer.maxShipment}" value="${buyer.minShipment}" title="Shipment amount" />
         <input id="input-${buyer.id}" type="number" min="${buyer.minShipment}" max="${buyer.maxShipment}" step="1" value="${buyer.minShipment}" />
+        <button id="max-${buyer.id}" type="button" title="Set shipment to the maximum you can currently ship">Max</button>
         <button id="ship-${buyer.id}" type="button" title="Ship bananas to this buyer">Ship</button>
       </div>
     `;
@@ -608,8 +591,8 @@ export function mountUI(container) {
 
       const slider = card.querySelector(`#slider-${buyer.id}`);
       const input = card.querySelector(`#input-${buyer.id}`);
-      const typeSelect = card.querySelector(`#type-${buyer.id}`);
       const shipButton = card.querySelector(`#ship-${buyer.id}`);
+      const maxButton = card.querySelector(`#max-${buyer.id}`);
       const controls = card.querySelector(`#controls-${buyer.id}`);
       const status = card.querySelector(`#status-${buyer.id}`);
       const cooldown = card.querySelector(`#cooldown-${buyer.id}`);
@@ -625,7 +608,19 @@ export function mountUI(container) {
 
       slider.addEventListener("input", () => syncShipmentInput(slider.value));
       input.addEventListener("change", () => syncShipmentInput(input.value));
-      shipButton.addEventListener("click", () => shipToBuyer(buyer.id, syncShipmentInput(input.value), typeSelect.value));
+      shipButton.addEventListener("click", () => shipToBuyer(buyer.id, syncShipmentInput(input.value)));
+      maxButton.addEventListener("click", () => {
+        const lanes = getShippingLanesStatus();
+        const selectedLane = lanes.find((lane) => lane.selected) || lanes[0];
+        const laneCap = Math.max(1, Math.floor(Number(selectedLane?.capacity) || buyer.maxShipment));
+        const maxAllowedShipment = Math.min(buyer.maxShipment, laneCap);
+        const available = Math.floor(Number(gameState.bananas) || 0);
+        const desired = Math.min(available, maxAllowedShipment);
+
+        // If the player doesn't have enough for the min shipment, keep it at min so the UI stays consistent.
+        const next = clampShipment(Math.max(buyer.minShipment, desired), buyer.minShipment, maxAllowedShipment);
+        syncShipmentInput(next);
+      });
 
       buyerElements.set(buyer.id, {
         card,
@@ -633,10 +628,10 @@ export function mountUI(container) {
         cooldown,
         controls,
         input,
-        typeSelect,
         price,
         reputation,
         shipButton,
+        maxButton,
         syncShipmentInput,
         requirement: buyer.unlockRequirement,
       });
@@ -667,8 +662,6 @@ export function mountUI(container) {
     }
   });
 
-  const buyerTypeOptionsCache = new Map();
-
   const renderUI = (state) => {
     const fmt = (value) => formatGameNumber(value, numberFormatMode);
 
@@ -676,13 +669,10 @@ export function mountUI(container) {
     const breakdown = getProductionBreakdown();
     const treeHarvestSnapshot = getTreeHarvestSnapshot();
     const treeHarvestUpgrades = getTreeHarvestUpgradesStatus();
-    const unlockedTypes = getUnlockedBananaTypes();
-    const inventory = getBananaInventory();
     const currentTier = getCurrentTreeTier();
     const nextTier = getNextTreeTier();
     const treeCost = getTreeCost();
     const workerCost = getWorkerCost();
-    const maintenanceCost = getMaintenanceCost();
     const packingShedCost = getBuildingCost("packing_shed");
     const fertilizerLabCost = getBuildingCost("fertilizer_lab");
     const researchHutCost = getBuildingCost("research_hut");
@@ -706,7 +696,10 @@ export function mountUI(container) {
       setTextIfChanged(elements.treeDebugCountText, `Bananas on tree: ${fmt(treeHarvestSnapshot.bananasOnTree.length)} / ${fmt(treeHarvestSnapshot.maxBananasOnTree)}`);
       setTextIfChanged(elements.treeDebugIntervalText, `Spawn interval: ${fmt(treeHarvestSnapshot.spawnInterval)}s`);
       setTextIfChanged(elements.treeDebugAccumulatorText, `Spawn accumulator: ${fmt(treeHarvestSnapshot.spawnAccumulator)}s`);
-      setTextIfChanged(elements.treeDebugGoldenText, `Golden chance: ${fmt(treeHarvestSnapshot.goldenChance * 100)}%`);
+      setTextIfChanged(
+        elements.treeDebugGoldenText,
+        `Golden: ${fmt(treeHarvestSnapshot.goldenChance * 100)}% (x${fmt(treeHarvestSnapshot.goldenMultiplier)}), Diamond: ${fmt(treeHarvestSnapshot.diamondChance * 100)}% (x${fmt(treeHarvestSnapshot.diamondMultiplier)})`
+      );
     }
     if (treeHarvestSnapshot.shakeCooldownRemaining > 0) {
       setTextIfChanged(elements.shakeTreeBtn, `Shake Tree (${fmt(treeHarvestSnapshot.shakeCooldownRemaining)}s)`);
@@ -733,8 +726,6 @@ export function mountUI(container) {
     );
     setTextIfChanged(elements.workersText, `Workers: ${fmt(state.workersOwned)}`);
     setTextIfChanged(elements.workerRateText, `Workers/sec: ${fmt(state.bananasPerWorkerPerSecond)}`);
-    setTextIfChanged(elements.treeHealthText, `Health: ${fmt(state.treeHealth)}%`);
-    setTextIfChanged(elements.treeQualityText, `Quality: ${fmt(state.treeQuality)}x`);
     const orchardStatus = getOrchardStatus();
     if (elements.orchardText) {
       setTextIfChanged(
@@ -761,7 +752,6 @@ export function mountUI(container) {
     }
     setCheckedIfChanged(elements.autoSellToggle, state.autoSellEnabled);
     setValueIfChanged(elements.autoSellThresholdInput, state.autoSellThreshold);
-    setValueIfChanged(elements.productionModeSelect, state.productionMode || "highest");
     setTextIfChanged(elements.autoSellInfoText, `Auto-Sell price: $${fmt(getAutoSellPricePerBanana())} per banana above threshold`);
     setTextIfChanged(elements.treesPerSecText, `Auto/sec (est): ${fmt(breakdown.autoPerSecEstimated || 0)}`);
     setTextIfChanged(elements.workersPerSecText, `Worker potential/sec: ${fmt(breakdown.workerPerSec)}`);
@@ -769,13 +759,7 @@ export function mountUI(container) {
       elements.bonusMultipliersText,
       `Bonuses: Production ${fmt(breakdown.productionMultiplier)}x, Export ${fmt(breakdown.exportPriceMultiplier)}x, Antimatter Export ${fmt(
         breakdown.antimatterExportMultiplier
-      )}x, Quality ${fmt(breakdown.qualityMultiplier)}x, Health ${fmt(breakdown.healthMultiplier)}x`
-    );
-    setHtmlIfChanged(
-      elements.bananaInventoryList,
-      unlockedTypes
-      .map((bananaType) => `<p>${bananaType.name}: ${fmt(inventory[bananaType.id] || 0)}</p>`)
-      .join("")
+      )}x`
     );
     setTextIfChanged(elements.currentTierText, `Current Tier: ${currentTier.icon || ""} ${currentTier.name}`.trim());
 
@@ -822,8 +806,6 @@ export function mountUI(container) {
     setDisabledIfChanged(elements.buyFertilizerLabBtn, state.cash < fertilizerLabCost);
     setTextIfChanged(elements.buyResearchHutBtn, `Buy Research Hut ($${fmt(researchHutCost)})`);
     setDisabledIfChanged(elements.buyResearchHutBtn, state.cash < researchHutCost);
-    setTextIfChanged(elements.maintenanceBtn, `Buy Maintenance ($${fmt(maintenanceCost)})`);
-    setDisabledIfChanged(elements.maintenanceBtn, state.cash < maintenanceCost);
     setTextIfChanged(elements.packingShedText, `Packing Shed Lv ${fmt(state.packingShedLevel)} (+${fmt((state.packedExportBonusMultiplier - 1) * 100)}% export price)`);
     setTextIfChanged(elements.fertilizerLabText, `Fertilizer Lab Lv ${fmt(state.fertilizerLabLevel)} (tree output boost)`);
     setTextIfChanged(elements.researchHutText, `Research Hut Lv ${fmt(state.researchHutLevel)} (upgrade discount)`);
@@ -849,25 +831,7 @@ export function mountUI(container) {
       const unlocked = isBuyerUnlocked(buyer.id);
       const cooldownRemaining = getBuyerCooldownRemainingSeconds(buyer.id);
       refs.syncShipmentInput(refs.input.value);
-      const rules = getBuyerTypePolicy(buyer.id);
-      const options = unlockedTypes
-        .map((bananaType, index) => {
-          const accepted = index >= (rules.minAcceptedTypeTier || 0);
-          return `<option value="${bananaType.id}" ${accepted ? "" : "disabled"}>${bananaType.name}${accepted ? "" : " - Rejected"}</option>`;
-        })
-        .join("");
-      if (buyerTypeOptionsCache.get(buyer.id) !== options) {
-        refs.typeSelect.innerHTML = options;
-        buyerTypeOptionsCache.set(buyer.id, options);
-      }
-      if (!refs.typeSelect.value || refs.typeSelect.options[refs.typeSelect.selectedIndex]?.disabled) {
-        const firstAccepted = Array.from(refs.typeSelect.options).find((option) => !option.disabled);
-        if (firstAccepted) {
-          refs.typeSelect.value = firstAccepted.value;
-        }
-      }
-      const selectedType = refs.typeSelect.value || unlockedTypes[0]?.id;
-      const buyerPrice = getBuyerEffectivePricePerBanana(buyer, selectedType);
+      const buyerPrice = getBuyerEffectivePricePerBanana(buyer);
 
       if (refs.card) {
         refs.card.classList.toggle("is-locked", !unlocked);
@@ -878,6 +842,9 @@ export function mountUI(container) {
       setTextIfChanged(refs.cooldown, `Cooldown: ${formatCooldown(cooldownRemaining)}`);
       refs.controls.classList.toggle("is-hidden", !unlocked);
       setDisabledIfChanged(refs.shipButton, !unlocked || cooldownRemaining > 0);
+      if (refs.maxButton) {
+        setDisabledIfChanged(refs.maxButton, !unlocked);
+      }
 
       if (unlocked) {
         bestBuyerBonusPct = Math.max(bestBuyerBonusPct, ((buyerPrice / marketPrice) - 1) * 100);
@@ -914,7 +881,7 @@ export function mountUI(container) {
       setTextIfChanged(elements.eventDetailText, liveEvent.activeEventDescription);
     } else {
       setTextIfChanged(elements.eventNameText, `Event: No active event (next roll in ${formatCooldown(liveEvent.nextRollSeconds)})`);
-      setTextIfChanged(elements.eventDetailText, "Prepare cash, maintenance, and reputation for the next market event.");
+      setTextIfChanged(elements.eventDetailText, "Prepare cash and reputation for the next market event.");
     }
 
     const prestigeUnlocked = isPrestigeUnlocked();
@@ -936,6 +903,13 @@ export function mountUI(container) {
     setTextIfChanged(elements.ceoLevelText, `Level ${ceo.level}`);
     setWidthIfChanged(elements.ceoProgressFill, (ceo.progress * 100).toFixed(2));
     setTextIfChanged(elements.ceoProgressText, `${(ceo.progress * 100).toFixed(1)}% to next level`);
+    setTextIfChanged(elements.playerTotalBananasText, `Total Bananas: ${fmt(state.totalBananasEarned)}`);
+    setTextIfChanged(elements.playerTotalCashText, `Total Cash: $${fmt(state.totalCashEarned)}`);
+    setTextIfChanged(elements.playerTotalClicksText, `Total Clicks: ${fmt(state.totalClicks)}`);
+    setTextIfChanged(elements.playerTotalShipmentsText, `Total Shipments: ${fmt(state.totalShipments)}`);
+    setTextIfChanged(elements.playerContractsText, `Contracts Completed: ${fmt(state.contractsCompleted)}`);
+    setTextIfChanged(elements.playerTreesWorkersText, `Trees / Workers: ${fmt(state.treesOwned)} / ${fmt(state.workersOwned)}`);
+    setTextIfChanged(elements.playerPrestigeText, `Prestige / PIP: ${fmt(state.prestigeCount)} / ${fmt(state.pip)}`);
 
     setTextIfChanged(elements.researchPointsText, `Research Points: ${fmt(state.researchPoints)}`);
     setTextIfChanged(elements.researchRateText, `RP/sec: ${fmt(getResearchPointsPerSecond())}`);
