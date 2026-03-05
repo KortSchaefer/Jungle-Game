@@ -1,6 +1,6 @@
 {
   "name": "enterprise-software-electron",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Base Electron app scaffold",
   "main": "src/main/main.js",
   "build": {
@@ -41,6 +41,7 @@
     "pack": "npm run build:renderer && electron-builder --dir",
     "dist": "npm run build:renderer && electron-builder",
     "dist:publish": "npm run build:renderer && electron-builder --publish always",
+    "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1",
     "test": "echo \"No tests configured\""
   },
   "keywords": [],

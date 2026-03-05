@@ -1,0 +1,154 @@
+SUGGESTED SCALING CHANGES (PROGRESSION ACCELERATION)
+Generated from current docs + code: schemaVersion 6
+
+Goal
+- Make progression feel more multiplicative as you level up.
+- Ensure late-game multipliers still convert into visible gains (avoid hard caps blocking growth).
+
+Summary Of What Feels Flat Today
+- Costs scale exponentially (trees/workers/buildings/orchards), but several income paths hit caps.
+- Trees -> spawn speed uses diminishing returns with sqrt(treesOwned), which flattens late-game impact.
+- Lane capacity is a hard cap on shipments (Local = 250), and lane unlocks are far apart.
+- Buyer reputation multiplier is mostly linear and tops out relatively small.
+
+1) Add A Global "CEO Level" Multiplier (Total Bananas Based)
+Current
+- CEO level is mostly UI-driven.
+
+Change
+- Convert CEO level into a real, always-on multiplier that grows smoothly with totalBananasEarned.
+
+Recommended Implementation Options
+- Smooth curve (log-based):
+  ceoMult = 1 + 0.06 * log10(totalBananasEarned + 1)
+  Apply to: production AND export price (or production only to keep exports stable).
+- Stepwise curve (level-based):
+  ceoMult = (1.04 ^ ceoLevel)
+  If too strong, use 1.03 ^ ceoLevel.
+
+Why
+- Adds "always increasing" multiplicative progression without needing endless new upgrades.
+
+2) Make Tree Tier Value Multipliers More Aggressive (Especially T5-T7)
+Current (market value multipliers)
+- [1, 1.15, 1.35, 1.65, 2.05, 2.6, 3.4]
+
+Change
+- Increase higher tier multipliers so leveling up produces bigger jumps in cash.
+
+Suggested Curve (example)
+- [1, 1.25, 1.6, 2.2, 3.4, 5.5, 9.0]
+
+Why
+- This affects all sale prices (market + buyer effective price), so it is a clean multiplicative lever.
+
+3) Strengthen Buyer Reputation Scaling Late-Game
+Current
+- repMultiplier = 1 + rep * 0.004 (100 rep => 1.4x)
+
+Change
+- Keep early game close to current, but allow higher rep to matter more.
+
+Suggested Formula Options
+- Mild superlinear:
+  repMult = 1 + 0.0025*rep + 0.00003*(rep^2)
+  (100 rep => ~1.55x)
+- Threshold milestones:
+  rep >= 60: +10% buyer price
+  rep >= 80: +20% buyer price
+  rep >= 95: +35% buyer price
+
+Why
+- Makes reputation a meaningful, compounding lever for export progression.
+
+4) Reduce "Hard Cap" Bottlenecks So Multipliers Convert To Output
+Problem
+- Even if production/price multipliers rise, lane capacity and picker caps can stop visible growth.
+
+Recommended Changes
+- Picker caps scale with tier:
+  MAX_WORKER_PICKS_PER_UPDATE = 2 + floor(treeTierIndex / 2)
+  MAX_ORCHARD_PICKS_PER_UPDATE = 3 + floor(treeTierIndex / 2)
+  MAX_MONKEY_PICKS_PER_UPDATE = 2 + floor(treeTierIndex / 3)
+
+- Lane capacity scales with tier (small):
+  effectiveLaneCapacity = baseLaneCapacity * (1 + 0.05 * treeTierIndex)
+  Or via research node(s): "+25% lane capacity" etc.
+
+Why
+- Keeps the "physical" canopy/shipping model, but prevents late-game from feeling blocked.
+
+5) Rework TreesOwned -> Spawn Scaling To Stay Relevant Late-Game
+Current
+- spawn multiplier from trees: 1 / (1 + sqrt(treesOwned) * 0.14)
+
+Change
+- Use log growth (or hybrid) so additional trees still matter late-game, but remain controlled.
+
+Suggested Options
+- Log-based diminishing returns:
+  spawnMultFromTrees = 1 / (1 + log1p(treesOwned) * 0.35)
+- Hybrid (strong early, smooth late):
+  spawnMultFromTrees = 1 / (1 + sqrt(treesOwned) * 0.09 + log1p(treesOwned) * 0.18)
+
+Why
+- Buying trees continues to speed canopy growth even at higher counts.
+
+6) Make Buildings Provide More Multiplicative Synergy Later
+Current
+- Packing Shed: +4% export price per level (1 + level * 0.04)
+- Fertilizer Lab: improves spawn + canopy
+- Research Hut: discount floor at 0.55
+
+Changes
+- Packing Shed synergy:
+  At T4+: packing shed contribution * 1.25
+  At T6+: packing shed contribution * 1.6
+  (keeps early stable, makes late-game exports scale more)
+
+- Research Hut synergy:
+  Add small RP/sec multiplier or unlock deeper research rows faster at higher tiers.
+
+7) Prestige (PIP) Becomes Slightly Superlinear (Late-Game Reward)
+Current
+- PIP bonuses are linear (production +2% each, export +1.5% each, click +1% each)
+
+Change
+- Add a small quadratic term so high PIP runs feel meaningfully stronger.
+
+Suggested (example)
+- production: 1 + 0.02*pip + 0.0002*(pip^2)
+- export:      1 + 0.015*pip + 0.00015*(pip^2)
+- click:       1 + 0.01*pip + 0.0001*(pip^2)
+
+Why
+- Maintains early pacing but gives real late-game acceleration.
+
+8) Research Tree: Shift Power Toward Deeper Rows (Compounding Progression)
+Current
+- Individual nodes have strong multipliers that can feel front-loaded.
+
+Change
+- Reduce some early multipliers slightly, and add row/category completion multipliers deeper.
+
+Example
+- Completing a row in a category grants an extra 1.20x category multiplier.
+- Completing the final row in a category grants 1.35x.
+
+Why
+- Encourages pushing deeper for bigger multiplicative jumps.
+
+Recommended Priority Order (Best ROI)
+1) Tier value multipliers (T5-T7) + CEO multiplier
+2) Reduce cap bottlenecks (lane capacity + picker caps scaling)
+3) Reputation scaling improvements
+4) TreesOwned spawn scaling rework
+5) PIP superlinear bonuses
+6) Research completion multipliers
+
+Notes
+- Keep multipliers separated by domain to reduce accidental runaway:
+  Production multipliers affect spawn/canopy/click yield
+  Export multipliers affect price/cooldowns/lanes
+- When changing caps, keep dt-spike safety (avoid draining canopy in one tick).
+

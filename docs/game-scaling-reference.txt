@@ -1,0 +1,450 @@
+JUNGLE GAME SCALING + PROGRESSION REFERENCE
+Source: renderer code (schemaVersion 6)
+
+1) CORE ECONOMY FORMULAS
+
+- Tree cost: treeBaseCost * (treeCostGrowth ^ treesOwned)
+  - treeBaseCost = 25
+  - treeCostGrowth = 1.12
+
+- Worker cost: workerBaseCost * (workerCostGrowth ^ workersOwned)
+  - workerBaseCost = 40
+  - workerCostGrowth = 1.15
+
+- Building cost: baseCost * (growth ^ level)
+  - Packing Shed: base 750, growth 1.35
+  - Fertilizer Lab: base 1200, growth 1.35
+  - Research Hut: base 1800, growth 1.35
+
+- Orchard cost: orchardBaseCost * (orchardCostGrowth ^ orchardsOwned)
+  - orchardBaseCost = 4000
+  - orchardCostGrowth = 1.22
+
+- Orchard pick rate: orchardsOwned * orchardPickRatePerSecondPerOrchard
+  - orchardPickRatePerSecondPerOrchard = 0.85 picks/sec
+
+- Market price per banana:
+  - base = 0.35
+  - multiplied by tree tier value multiplier:
+    T1 1.00, T2 1.15, T3 1.35, T4 1.65, T5 2.05, T6 2.60, T7 3.40
+
+- Auto-sell fallback price: 0.20 per banana
+
+- Buyer effective price:
+  marketPrice * buyerMultiplier * exportPriceMultiplier * antimatterBoost * repMultiplier * laneMultiplier * eventMultiplier
+  - repMultiplier = 1 + (reputation * 0.004)
+  - eventMultiplier: 1.10 during Squirrel Market Surge, else 1
+
+- Shipment validation:
+  shipmentAmount must be between:
+  - buyer.minShipment
+  - min(buyer.maxShipment, selectedLane.capacity)
+
+- Buyer cooldown after shipment:
+  buyer.cooldownSeconds * exportCooldownMultiplier
+  (minimum 1 second)
+
+2) PRODUCTION + HARVEST SYSTEM
+
+Default tree-harvest state:
+- maxBananasOnTree = 12
+- spawnInterval = 1.5 sec
+- clickHarvestYield = 1
+- goldenChance = 0.005 (0.5%)
+- goldenMultiplier = 35x
+- diamondChance = 0.0005 (0.05%)
+- diamondMultiplier = 200x
+- shakeCooldownSeconds = 35
+
+Spawn region:
+- X in middle third of canopy (33.33% to 66.67%)
+- Y in top 2/5 of canopy (0% to 40%)
+
+Auto-picker pacing caps:
+- Worker picks capped to 80% of spawn-rate target
+- Max worker picks per update = 2
+- Max orchard picks per update = 3
+- Max monkey picks per update = 2
+- Bananas younger than 450 ms are protected from auto-picks
+
+Derived harvest modifiers from gameplay:
+- Trees owned adds canopy capacity: +floor(treesOwned * 0.75)
+- Trees owned speeds spawn with diminishing returns:
+  spawn multiplier = 1 / (1 + sqrt(treesOwned) * 0.14)
+- Fertilizer Lab:
+  - spawn speed multiplier factor: 1 / (1 + level * 0.06)
+  - canopy bonus: +floor(level * 0.5)
+
+3) BUILDING EFFECTS
+
+- Packing Shed:
+  export price multiplier = 1 + (level * 0.04)
+
+- Fertilizer Lab:
+  production support via harvest system (spawn/capacity improvements)
+
+- Research Hut:
+  upgrade cash discount multiplier = max(0.55, 1 - level * 0.03)
+
+- Research Points gain:
+  RP/sec = researchHutLevel * 0.06 * achievementResearchMultiplier
+
+4) FARM EVOLUTIONS (TREE TIERS)
+
+T1 Backyard Tree
+- baseBps/tree: 0.20
+- unlock cost: 0
+- quest: none
+- reward: starting setup
+
+T2 Small Orchard
+- baseBps/tree: 0.45
+- unlock cost: 150
+- quest: own 8 trees
+- harvest modifiers: spawn 0.92x, +2 cap, click 1.05x, worker 1.08x, shake 0.95x
+- reward: +8% farm production multiplier
+
+T3 Commercial Farm
+- baseBps/tree: 1.10
+- unlock cost: 600
+- quest: ship 250 to Raccoon Roadside Depot
+- harvest modifiers: spawn 0.85x, +4 cap, click 1.12x, worker 1.16x, +1% golden chance, +2 golden mult, shake 0.90x
+- reward: unlock buyer Gorilla Wholesale Guild
+
+T4 Mega Plantation
+- baseBps/tree: 2.60
+- unlock cost: 2500
+- quest: earn total cash 8000
+- harvest modifiers: spawn 0.77x, +6 cap, click 1.20x, worker 1.28x, +2% golden chance, +4 golden mult, shake 0.85x
+- reward: unlock upgrade category Export (mapped to Logistics)
+
+T5 Tropical Bio-Dome
+- baseBps/tree: 6.20
+- unlock cost: 10000
+- quest: ship 1600 to Penguin Polar Freight
+- harvest modifiers: spawn 0.68x, +8 cap, click 1.35x, worker 1.45x, +3% golden chance, +6 golden mult, shake 0.80x
+- reward: +12% farm production multiplier
+
+T6 Quantum Banana Reactor
+- baseBps/tree: 14.50
+- unlock cost: 45000
+- quest: own 90 trees
+- harvest modifiers: spawn 0.60x, +10 cap, click 1.55x, worker 1.70x, +5% golden chance, +10 golden mult, shake 0.75x
+- reward: unlock upgrade category Clicking (mapped to Weird Science)
+
+T7 Antimatter Banana Singularity
+- baseBps/tree: 35.00
+- unlock cost: 200000
+- quest: ship 7500 to Shark Investment Group
+- harvest modifiers: spawn 0.52x, +14 cap, click 1.90x, worker 2.10x, +8% golden chance, +18 golden mult, shake 0.70x
+- reward: unlock buyer Dragon Galactic Logistics
+
+5) TREE HARVEST UPGRADES (CASH PURCHASED)
+
+1. harvest_faster_growth
+- Faster Growth
+- cost: 220
+- effect: spawnIntervalMultiplier 0.90
+
+2. harvest_bigger_canopy
+- Bigger Canopy
+- cost: 650
+- effect: maxBananasFlat +4
+
+3. harvest_heavier_bunches
+- Heavier Bunches
+- cost: 1300
+- effect: clickYieldMultiplier 1.70
+
+4. harvest_golden_bananas
+- Golden Bananas
+- cost: 3500
+- effect: goldenChance +0.06, goldenMultiplier +10
+
+5. harvest_monkey_picker
+- Monkey Picker
+- cost: 8200
+- effect: monkeyPickerInterval 3.5 sec, workerPickMultiplier 1.12
+
+6. harvest_agile_picker
+- Monkey Picker II
+- cost: 19000
+- requires: harvest_monkey_picker
+- effect: monkeyPickerInterval 1.9 sec, workerPickMultiplier 1.18
+
+7. harvest_shake_cooldown
+- Shake Tree Rigging
+- cost: 14000
+- effect: shakeCooldownMultiplier 0.70
+
+6) RESEARCH TREE UPGRADES (CASH + RP)
+
+Farming Tech:
+- soil_mapping: cost 200 + 0 RP, unlock treesOwned 3, effect production x1.20
+- smart_irrigation: cost 900 + 8 RP, unlock cash 800, prereq soil_mapping, effect production x1.32
+- precision_pruning: cost 3200 + 20 RP, unlock treesOwned 12, prereq smart_irrigation, effect production x1.45
+- genetic_cultivars: cost 14000 + 60 RP, unlock totalBananasEarned 15000, prereq precision_pruning, effect production x1.70
+
+Logistics:
+- port_scheduling: cost 650 + 4 RP, unlock totalBananasEarned 700, effect export price x1.10
+- cold_chain: cost 2800 + 18 RP, unlock cash 2400, prereq port_scheduling, effect export price x1.18
+- dock_ai: cost 9000 + 44 RP, unlock treesOwned 18, prereq cold_chain, effect export cooldown x0.86
+- lane_optimizer: cost 28000 + 95 RP, unlock totalBananasEarned 65000, prereq dock_ai, effect export price x1.30
+
+Finance:
+- hedge_desk: cost 1800 + 10 RP, unlock cash 1500, effect export price x1.08
+- capital_efficiency: cost 7500 + 32 RP, unlock totalBananasEarned 12000, prereq hedge_desk, effect click x1.35
+- treasury_algorithms: cost 26000 + 85 RP, unlock cash 20000, prereq capital_efficiency, effect export price x1.22
+
+Weird Science:
+- grip_gloves_mk2: cost 120 + 3 RP, unlock totalBananasEarned 80, effect click x1.45
+- micro_drone_swarm: cost 9500 + 40 RP, unlock totalBananasEarned 10000, prereq grip_gloves_mk2, effect click x2.40
+- quantum_pollination: cost 80000 + 130 RP, unlock cash 70000, prereq micro_drone_swarm + genetic_cultivars, effect production x2.10
+- reality_fork_finance: cost 160000 + 250 RP, unlock totalBananasEarned 300000, prereq quantum_pollination + treasury_algorithms, effect export price x1.50
+
+7) SHIPPING LANES
+
+- Local: multiplier 1.00x, capacity 250, unlock totalBananasEarned 0
+- Regional: multiplier 1.12x, capacity 900, unlock totalBananasEarned 20000
+- Global: multiplier 1.28x, capacity 3200, unlock totalBananasEarned 200000
+- Interstellar: multiplier 1.55x, capacity 12000, unlock totalBananasEarned 1500000
+
+8) BUYERS (EXPORTS)
+
+Local:
+- Squirrel Market: unlock totalBananasEarned 0, price x1.00, shipment 10-80, cooldown 4s
+- Raccoon Roadside Depot: unlock treesOwned 2, price x1.20, shipment 25-180, cooldown 8s
+- Beaver Builder Bazaar: unlock cash 220, price x1.28, shipment 35-220, cooldown 10s
+- Otter River Outlet: unlock totalBananasEarned 900, price x1.34, shipment 45-260, cooldown 12s
+- Badger Bodega Co-op: unlock treesOwned 6, price x1.42, shipment 60-320, cooldown 14s
+
+Corporate:
+- Parrot Produce Traders: unlock cash 300, price x1.45, shipment 60-350, cooldown 14s
+- Gorilla Wholesale Guild: unlock totalBananasEarned 3000, price x1.80, shipment 120-700, cooldown 20s
+- Penguin Polar Freight: unlock treesOwned 15, price x2.15, shipment 220-1200, cooldown 28s
+- Elephant Export Collective: unlock cash 8000, price x2.55, shipment 350-1800, cooldown 35s
+- Wolf Logistics Syndicate: unlock totalBananasEarned 25000, price x3.00, shipment 550-2600, cooldown 45s
+
+Global:
+- Octopus Deep-Sea Shipping: unlock treesOwned 40, price x3.60, shipment 900-4000, cooldown 58s
+- Shark Investment Group: unlock cash 120000, price x4.30, shipment 1500-6500, cooldown 72s
+- Falcon Air Cargo: unlock totalBananasEarned 90000, price x4.75, shipment 1800-7800, cooldown 78s
+- Tiger Commodities Desk: unlock cash 220000, price x5.20, shipment 2100-9000, cooldown 84s
+- Rhino Bulk Terminals: unlock treesOwned 85, price x5.60, shipment 2400-10200, cooldown 88s
+
+Interstellar:
+- Dragon Galactic Logistics: unlock totalBananasEarned 500000, price x6.30, shipment 2500-12000, cooldown 90s
+- Phoenix Orbital Freight: unlock totalBananasEarned 900000, price x7.10, shipment 3200-15000, cooldown 96s
+- Manta Nebula Haulers: unlock cash 1200000, price x7.80, shipment 3800-18000, cooldown 102s
+- Lynx Lunar Exchange: unlock treesOwned 140, price x8.40, shipment 4200-21000, cooldown 108s
+- Orca Star Port Authority: unlock totalBananasEarned 2500000, price x9.20, shipment 4800-25000, cooldown 114s
+
+Cosmic:
+- Nebula Exchange: unlock antimatterBananas 10, price x10.10, shipment 3000-18000, cooldown 96s
+- Void Whale Consortium: unlock antimatterBananas 150, price x11.40, shipment 4500-26000, cooldown 110s
+- Kraken Event Horizon: unlock antimatterBananas 900, price x12.80, shipment 7000-36000, cooldown 126s
+- Chimp Multiverse Holdings: unlock antimatterBananas 3500, price x14.20, shipment 10000-50000, cooldown 140s
+- Celestial Serpent Arbitrage: unlock antimatterBananas 12000, price x16.00, shipment 14000-70000, cooldown 160s
+
+9) MILESTONES (TOTAL BANANAS EARNED)
+
+- milestone_seed: 0
+  - unlock buyers: squirrel_market
+  - max tier transition index: 0
+
+- milestone_grove: 250
+  - unlock buyers: raccoon_roadside
+  - unlock upgrades: soil_mapping, grip_gloves_mk2
+  - max tier transition index: 1
+
+- milestone_farm: 2000
+  - unlock buyers: parrot_traders
+  - unlock upgrades: smart_irrigation, port_scheduling
+  - max tier transition index: 2
+
+- milestone_industry: 12000
+  - unlock buyers: gorilla_wholesale, penguin_freight
+  - unlock upgrades: precision_pruning, cold_chain, hedge_desk
+  - max tier transition index: 3
+  - orchard milestone gate
+
+- milestone_biodome: 70000
+  - unlock buyers: elephant_exports, wolf_logistics
+  - unlock upgrades: genetic_cultivars, dock_ai, capital_efficiency
+  - max tier transition index: 4
+
+- milestone_quantum: 350000
+  - unlock buyers: octopus_shipping, shark_investment_group
+  - unlock upgrades: micro_drone_swarm, lane_optimizer, treasury_algorithms
+  - max tier transition index: 5
+
+- milestone_singularity: 2000000
+  - unlock buyers: dragon_galactic_logistics
+  - unlock upgrades: quantum_pollination, reality_fork_finance
+  - max tier transition index: 6
+
+10) ORCHARD UNLOCK RULE
+
+To buy orchards, both must be true:
+- totalBananasEarned >= milestone_industry requirement (12000)
+- current cash >= 2500 cash gate
+Then orchard purchase also requires orchard cost affordability.
+
+11) CONTRACTS + REPUTATION
+
+- Max active contracts: 3
+- Contract generation interval: every 45s (game checks loop)
+- Premium contracts unlock at buyer reputation >= 60
+- Successful shipment to buyer: +0.9 reputation
+- Failed shipment attempt (not enough bananas): -0.8 reputation
+
+Contract generation details:
+- targetBananas = floor(buyer.minShipment * scale + random * buyer.maxShipment * 0.4)
+  - scale: 2.1 premium, 1.35 standard
+- duration: 10 min premium, 6 min standard
+- reward cash: targetBananas * effectiveBuyerPrice * (1.4 premium or 0.95 standard)
+- reward rep: +8 premium, +4 standard
+
+12) WEIRD SCIENCE LAYER
+
+Resources:
+- Banana Matter
+- Exotic Peel Particles
+- Antimatter Bananas
+
+Converters:
+- Quantum Reactor
+  - unlock: treeTierIndex >= 5
+  - input: bananas 120/sec per level
+  - output: bananaMatter 10/sec per level
+  - cost: 150000 * (1.24 ^ level)
+
+- Collider
+  - unlock: treeTierIndex >= 6
+  - input: bananaMatter 16/sec per level
+  - output: exoticPeelParticles 1.6/sec per level
+  - cost: 900000 * (1.27 ^ level)
+
+- Containment
+  - unlock: treeTierIndex >= 6
+  - input: exoticPeelParticles 1.4/sec per level
+  - output: antimatterBananas 0.1/sec per level
+  - cost: 4200000 * (1.30 ^ level)
+
+Antimatter export multiplier:
+- 1 + log10(antimatterBananas + 1) * 4
+
+13) PRESTIGE (PIP)
+
+Unlock condition:
+- treeTierIndex >= 5 (Quantum Banana Reactor)
+  OR
+- totalBananasEarned >= 1,000,000
+
+PIP gain formula:
+- floor((log10(totalBananasEarned + 1) - 5) * 5), min 0
+
+Permanent bonuses from PIP:
+- production multiplier: 1 + pip * 0.02
+- export price multiplier: 1 + pip * 0.015
+- click multiplier: 1 + pip * 0.01
+- worker prestige bonus also contributes in worker stat: 1 + pip * 0.005
+
+14) TIMED EVENTS
+
+- Squirrel Market Surge
+  - +10% export price for 60 seconds
+
+- Shark Investor Visit
+  - short event window (30 seconds), bonus depends on shark reputation via event handling
+
+Event roll cadence:
+- next event every random 120 to 360 seconds when no active event
+
+15) ACHIEVEMENTS (40 TOTAL)
+
+Categories:
+- Clicking (8)
+- Trees Owned (8)
+- Shipments (8)
+- Contracts (8)
+- Tier Unlocks (8)
+
+Perk families:
+- click multiplier
+- production multiplier
+- export price multiplier
+- research multiplier
+- worker multiplier
+
+Typical perk magnitudes are +1% to +5% multiplicative boosts.
+
+16) SAVE + MIGRATION NOTES
+
+- current schemaVersion = 6
+- migration notes in code:
+  - v3: worker base stat stabilization
+  - v4: tree harvest state + harvest upgrades
+  - v5: orchard fields
+  - v6: removed tree quality/health system
+
+17) IMPORTANT EXPORT LIMIT INTERACTION
+
+Per shipment cap is always:
+min(buyer.maxShipment, selectedLane.capacity)
+So even high-end buyers are capped by lane until better lanes unlock/select.
+
+18) IMPLEMENTED TUNING UPDATE (POST-SUGGESTED-SCALING)
+
+The engine now applies these additional scaling rules:
+
+- CEO/global multiplier:
+  ceoMult = 1.03 ^ (ceoLevel - 1)
+  where ceoLevel = floor(log10(totalBananasEarned + 1)) + 1
+  Applied to: production multiplier and export price multiplier.
+
+- Tier value multipliers for market price:
+  [1, 1.25, 1.6, 2.2, 3.4, 5.5, 9.0]
+
+- Reputation multiplier (superlinear):
+  repMult = 1 + 0.0025*rep + 0.00003*(rep^2)
+
+- Shipping lane capacity scaling by tier:
+  effectiveCapacity = floor(baseCapacity * (1 + treeTierIndex * 0.05))
+  Shipment cap remains:
+  min(buyer.maxShipment, effectiveLaneCapacity)
+
+- Trees -> spawn interval scaling updated:
+  spawnMultFromTrees = 1 / (1 + log1p(treesOwned) * 0.35)
+
+- Picker cap scaling by tier (per update):
+  worker cap = 2 + floor(treeTierIndex / 2)
+  orchard cap = 3 + floor(treeTierIndex / 2)
+  monkey cap = 2 + floor(treeTierIndex / 3)
+
+- Packing Shed tier synergy:
+  tierIndex >= 3: packing multiplier x1.25
+  tierIndex >= 5: packing multiplier x1.6
+
+- Prestige (PIP) bonuses now slightly superlinear:
+  production = 1 + 0.02*pip + 0.0002*(pip^2)
+  export     = 1 + 0.015*pip + 0.00015*(pip^2)
+  click      = 1 + 0.01*pip + 0.0001*(pip^2)
+
+- Research row/category completion multipliers:
+  Farming Tech:
+  row complete: production x1.12 each
+  full category complete: production x1.25
+
+  Logistics:
+  row complete: export x1.12 each
+  full category complete: export x1.25
+
+  Finance:
+  row complete: export x1.10 each, click x1.05 each
+  full category complete: export x1.20
+
+  Weird Science:
+  row complete: click x1.14 each, production x1.06 each
+  full category complete: click x1.25
+

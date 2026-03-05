@@ -190,6 +190,9 @@ export class TreeHarvestSystem {
     }
 
     if (options.enablePickers !== false) {
+      const maxWorkerPicksPerUpdate = Math.max(1, Math.floor(Number(options.maxWorkerPicksPerUpdate) || MAX_WORKER_PICKS_PER_UPDATE));
+      const maxOrchardPicksPerUpdate = Math.max(1, Math.floor(Number(options.maxOrchardPicksPerUpdate) || MAX_ORCHARD_PICKS_PER_UPDATE));
+      const maxMonkeyPicksPerUpdate = Math.max(1, Math.floor(Number(options.maxMonkeyPicksPerUpdate) || MAX_MONKEY_PICKS_PER_UPDATE));
       const spawnRatePerSecond = 1 / Math.max(0.001, Number(this.state.spawnInterval) || DEFAULT_TREE_STATE.spawnInterval);
       const workerPickRatePerSecondRaw = Math.max(0, Number(options.workerPickRatePerSecond) || 0);
       const workerPickRatePerSecond = Math.min(workerPickRatePerSecondRaw, spawnRatePerSecond * WORKER_MAX_PICK_FRACTION_OF_SPAWN);
@@ -199,7 +202,7 @@ export class TreeHarvestSystem {
           this.state.workerPickerAccumulator = Math.min(this.state.workerPickerAccumulator, MAX_PICKER_ACCUMULATOR);
         }
         let picksThisUpdate = 0;
-        while (this.state.workerPickerAccumulator >= 1 && (simulateOffline || picksThisUpdate < MAX_WORKER_PICKS_PER_UPDATE)) {
+        while (this.state.workerPickerAccumulator >= 1 && (simulateOffline || picksThisUpdate < maxWorkerPicksPerUpdate)) {
           this.state.workerPickerAccumulator -= 1;
           picksThisUpdate += 1;
           if (!this.#autoPickOne("worker_picker", { ignoreMinAge: simulateOffline })) {
@@ -215,7 +218,7 @@ export class TreeHarvestSystem {
           this.state.orchardPickerAccumulator = Math.min(this.state.orchardPickerAccumulator, MAX_PICKER_ACCUMULATOR);
         }
         let picksThisUpdate = 0;
-        while (this.state.orchardPickerAccumulator >= 1 && (simulateOffline || picksThisUpdate < MAX_ORCHARD_PICKS_PER_UPDATE)) {
+        while (this.state.orchardPickerAccumulator >= 1 && (simulateOffline || picksThisUpdate < maxOrchardPicksPerUpdate)) {
           this.state.orchardPickerAccumulator -= 1;
           picksThisUpdate += 1;
           if (!this.#autoPickOne("orchard_picker", { ignoreMinAge: simulateOffline })) {
@@ -231,7 +234,7 @@ export class TreeHarvestSystem {
           this.state.monkeyPickerAccumulator = Math.min(this.state.monkeyPickerAccumulator, MAX_PICKER_ACCUMULATOR);
         }
         let picksThisUpdate = 0;
-        while (this.state.monkeyPickerAccumulator >= 1 && (simulateOffline || picksThisUpdate < MAX_MONKEY_PICKS_PER_UPDATE)) {
+        while (this.state.monkeyPickerAccumulator >= 1 && (simulateOffline || picksThisUpdate < maxMonkeyPicksPerUpdate)) {
           this.state.monkeyPickerAccumulator -= 1;
           picksThisUpdate += 1;
           if (!this.#autoPickOne("monkey_picker", { ignoreMinAge: simulateOffline })) {
