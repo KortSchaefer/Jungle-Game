@@ -3,7 +3,7 @@ param(
   [string]$Version,
 
   [Parameter(Mandatory = $false)]
-  [string]$Branch = "main",
+  [string]$Branch,
 
   [Parameter(Mandatory = $false)]
   [string]$Message,
@@ -45,6 +45,14 @@ if ([string]::IsNullOrWhiteSpace($Message)) {
 }
 
 if (-not $SkipGit) {
+  if ([string]::IsNullOrWhiteSpace($Branch)) {
+    $detectedBranch = (git rev-parse --abbrev-ref HEAD).Trim()
+    if ([string]::IsNullOrWhiteSpace($detectedBranch) -or $detectedBranch -eq "HEAD") {
+      throw "Could not detect current git branch. Pass -Branch explicitly."
+    }
+    $Branch = $detectedBranch
+  }
+
   Run-Step "git add ."
   git diff --cached --quiet
   if ($LASTEXITCODE -ne 0) {
@@ -52,6 +60,7 @@ if (-not $SkipGit) {
   } else {
     Write-Host ">> No staged changes to commit."
   }
+  Write-Host ">> Using branch '$Branch' for push."
   Run-Step "git push origin $Branch"
 }
 

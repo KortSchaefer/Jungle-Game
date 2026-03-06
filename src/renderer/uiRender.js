@@ -5,6 +5,7 @@ import {
   buyOrchard,
   buyWeirdScienceConverter,
   buyTree,
+  getAutoExportStatus,
   getAutoSellPricePerBanana,
   getActiveContracts,
   getAchievementsStatus,
@@ -49,7 +50,9 @@ import {
   subscribe,
   setAutoSellEnabled,
   setAutoSellThreshold,
+  setAutoExportEnabled,
   selectShippingLane,
+  unlockAutoExport,
   unlockNextTreeTier,
 } from "./gameEngine.js";
 import { formatGameNumber } from "./numbers.js";
@@ -245,6 +248,8 @@ export function mountUI(container) {
     autoSellToggle: container.querySelector("#autoSellToggle"),
     autoSellThresholdInput: container.querySelector("#autoSellThresholdInput"),
     autoSellInfoText: container.querySelector("#autoSellInfoText"),
+    autoExportStatusText: container.querySelector("#autoExportStatusText"),
+    autoExportBtn: container.querySelector("#autoExportBtn"),
     treesPerSecText: container.querySelector("#treesPerSecText"),
     workersPerSecText: container.querySelector("#workersPerSecText"),
     bonusMultipliersText: container.querySelector("#bonusMultipliersText"),
@@ -533,6 +538,16 @@ export function mountUI(container) {
   elements.autoSellThresholdInput.addEventListener("change", () => {
     setAutoSellThreshold(elements.autoSellThresholdInput.value);
   });
+  if (elements.autoExportBtn) {
+    elements.autoExportBtn.addEventListener("click", () => {
+      const status = getAutoExportStatus();
+      if (!status.unlocked) {
+        unlockAutoExport();
+        return;
+      }
+      setAutoExportEnabled(!status.enabled);
+    });
+  }
   elements.shippingLaneSelect.addEventListener("change", () => {
     selectShippingLane(elements.shippingLaneSelect.value);
   });
@@ -812,6 +827,26 @@ export function mountUI(container) {
 
     const marketPrice = getMarketPricePerBanana();
     setTextIfChanged(elements.marketPriceText, `Market price: $${fmt(marketPrice)} per banana`);
+    const autoExportStatus = getAutoExportStatus();
+    if (elements.autoExportStatusText && elements.autoExportBtn) {
+      if (!autoExportStatus.unlocked) {
+        setTextIfChanged(
+          elements.autoExportStatusText,
+          `Locked: Pay $${fmt(autoExportStatus.unlockCost)} to unlock automatic max shipments when buyers are ready.`
+        );
+        setTextIfChanged(elements.autoExportBtn, `Unlock Auto-Export ($${fmt(autoExportStatus.unlockCost)})`);
+        setDisabledIfChanged(elements.autoExportBtn, !autoExportStatus.canUnlock);
+      } else {
+        setTextIfChanged(
+          elements.autoExportStatusText,
+          autoExportStatus.enabled
+            ? "Auto-Export: ON (ships max available to ready buyers)."
+            : "Auto-Export: OFF."
+        );
+        setTextIfChanged(elements.autoExportBtn, autoExportStatus.enabled ? "Disable Auto-Export" : "Enable Auto-Export");
+        setDisabledIfChanged(elements.autoExportBtn, false);
+      }
+    }
 
     const lanes = getShippingLanesStatus();
     setHtmlIfChanged(

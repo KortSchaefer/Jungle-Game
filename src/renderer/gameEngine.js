@@ -6,7 +6,7 @@ import { TreeHarvestSystem, getDefaultTreeState } from "./treeHarvestSystem.js";
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 6;
+export const GAME_STATE_SCHEMA_VERSION = 7;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
@@ -30,6 +30,7 @@ const EVENT_MIN_ROLL_SECONDS = 120;
 const EVENT_MAX_ROLL_SECONDS = 360;
 const CEO_EMAIL_MIN_ROLL_SECONDS = 55;
 const CEO_EMAIL_MAX_ROLL_SECONDS = 150;
+const AUTO_EXPORT_UNLOCK_CASH = 20_000;
 
 let firstTickAfterLoadPending = true;
 let lastLoggedBananasForDebug = 0;
@@ -310,6 +311,8 @@ const DEFAULT_STATE = Object.freeze({
   containmentLevel: 0,
   autoSellEnabled: false,
   autoSellThreshold: 200,
+  autoExportUnlocked: false,
+  autoExportEnabled: false,
   purchasedUpgradeIds: [],
   unlockedResearchNodeIds: [],
   unlockedAchievementIds: [],
@@ -480,7 +483,7 @@ function sanitizeShipmentTotals(rawTotals) {
 }
 
 function sanitizeUpgradeCategories(rawCategories) {
-  const allowed = new Set(upgrades.map((upgrade) => upgrade.group));
+  const allowed = new Set(upgrades.map((upgrade) => upgrade.category || upgrade.group).filter(Boolean));
   const categories = Array.isArray(rawCategories) ? rawCategories : [];
   const next = categories.filter((category) => allowed.has(category));
   if (!next.includes("Farming Tech")) {
@@ -491,6 +494,10 @@ function sanitizeUpgradeCategories(rawCategories) {
   }
 
   return Array.from(new Set(next));
+}
+
+function getUpgradeCategory(upgrade) {
+  return upgrade?.category || upgrade?.group || "";
 }
 
 function sanitizeBuyerReputation(rawReputation) {
@@ -566,6 +573,10 @@ function migrateLoadedState(rawState) {
     // v6 removes the tree condition (quality/health) system.
     delete migrated.treeQuality;
     delete migrated.treeHealth;
+  }
+  if (sourceSchemaVersion < 7) {
+    migrated.autoExportUnlocked = false;
+    migrated.autoExportEnabled = false;
   }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
@@ -1119,7 +1130,7 @@ function hasResearchPrerequisites(upgrade) {
 function refreshUnlockedResearchNodes() {
   const unlocked = new Set(gameState.unlockedResearchNodeIds);
   upgrades.forEach((upgrade) => {
-    const categoryUnlocked = gameState.unlockedUpgradeCategories.includes(upgrade.group);
+    const categoryUnlocked = gameState.unlockedUpgradeCategories.includes(getUpgradeCategory(upgrade));
     const requirementUnlocked = gameState.milestoneUnlockedUpgradeIds.includes(upgrade.id) || isRequirementMet(upgrade.unlockCondition);
     if (categoryUnlocked && hasResearchPrerequisites(upgrade) && requirementUnlocked) {
       unlocked.add(upgrade.id);
@@ -1461,6 +1472,75 @@ function performAutoSell() {
   return excess;
 }
 
+function tryShipToBuyerInternal(buyer, amount, options = {}) {
+  if (!buyer || !isBuyerUnlocked(buyer.id)) {
+    return false;
+  }
+  if (getBuyerCooldownRemainingSeconds(buyer.id) > 0) {
+    return false;
+  }
+
+  const shipmentAmount = Math.floor(clampNonNegative(Number(amount) || 0));
+  const lane = getSelectedShippingLane();
+  const maxAllowedShipment = Math.min(buyer.maxShipment, getEffectiveShippingLaneCapacity(lane));
+  if (shipmentAmount < buyer.minShipment || shipmentAmount > maxAllowedShipment) {
+    return false;
+  }
+
+  if (gameState.bananas < shipmentAmount) {
+    if (options.applyPenaltyOnInsufficient !== false) {
+      changeBuyerReputation(buyer.id, -0.8);
+      if (options.notify) {
+        notifyListeners();
+      }
+    }
+    return false;
+  }
+
+  const revenue = shipmentAmount * getBuyerEffectivePricePerBanana(buyer);
+  removeBananas(shipmentAmount);
+  addCash(revenue);
+  gameState.totalShipments += shipmentAmount;
+  changeBuyerReputation(buyer.id, 0.9);
+  const currentShipped = gameState.lifetimeBuyerShipmentTotals[buyer.id] || 0;
+  gameState.lifetimeBuyerShipmentTotals[buyer.id] = addStable(currentShipped, shipmentAmount);
+  applyShipmentToContracts(buyer.id, shipmentAmount);
+
+  const cooldownMs = buyer.cooldownSeconds * gameState.exportCooldownMultiplier * 1000;
+  gameState.buyerCooldowns[buyer.id] = Date.now() + Math.max(1000, cooldownMs);
+
+  if (options.notify) {
+    notifyListeners();
+  }
+  return true;
+}
+
+function performAutoExport() {
+  if (!gameState.autoExportUnlocked || !gameState.autoExportEnabled) {
+    return 0;
+  }
+
+  const readyBuyers = buyers
+    .filter((buyer) => isBuyerUnlocked(buyer.id) && getBuyerCooldownRemainingSeconds(buyer.id) <= 0)
+    .sort((a, b) => getBuyerEffectivePricePerBanana(b) - getBuyerEffectivePricePerBanana(a));
+
+  let shippedCount = 0;
+  readyBuyers.forEach((buyer) => {
+    const lane = getSelectedShippingLane();
+    const maxAllowedShipment = Math.min(buyer.maxShipment, getEffectiveShippingLaneCapacity(lane));
+    const available = Math.floor(clampNonNegative(Number(gameState.bananas) || 0));
+    const shipmentAmount = Math.min(maxAllowedShipment, available);
+    if (shipmentAmount < buyer.minShipment) {
+      return;
+    }
+    if (tryShipToBuyerInternal(buyer, shipmentAmount, { applyPenaltyOnInsufficient: false, notify: false })) {
+      shippedCount += 1;
+    }
+  });
+
+  return shippedCount;
+}
+
 function getEstimatedAutoBananasPerSecond() {
   const snapshot = treeHarvestSystem.getSnapshot();
   const spawnInterval = Math.max(0.001, Number(snapshot.spawnInterval) || 1.5);
@@ -1746,13 +1826,45 @@ export function setAutoSellThreshold(threshold) {
   notifyListeners();
 }
 
+export function getAutoExportStatus() {
+  return {
+    unlocked: Boolean(gameState.autoExportUnlocked),
+    enabled: Boolean(gameState.autoExportEnabled),
+    unlockCost: AUTO_EXPORT_UNLOCK_CASH,
+    canUnlock: gameState.cash >= AUTO_EXPORT_UNLOCK_CASH,
+  };
+}
+
+export function setAutoExportEnabled(enabled) {
+  if (!gameState.autoExportUnlocked) {
+    return false;
+  }
+  gameState.autoExportEnabled = Boolean(enabled);
+  notifyListeners();
+  return true;
+}
+
+export function unlockAutoExport() {
+  if (gameState.autoExportUnlocked) {
+    return true;
+  }
+  if (gameState.cash < AUTO_EXPORT_UNLOCK_CASH) {
+    return false;
+  }
+  removeCash(AUTO_EXPORT_UNLOCK_CASH);
+  gameState.autoExportUnlocked = true;
+  gameState.autoExportEnabled = true;
+  notifyListeners();
+  return true;
+}
+
 export function isUpgradeUnlocked(upgradeId) {
   const upgrade = upgradeById.get(upgradeId);
   if (!upgrade) {
     return false;
   }
 
-  if (!gameState.unlockedUpgradeCategories.includes(upgrade.group)) {
+  if (!gameState.unlockedUpgradeCategories.includes(getUpgradeCategory(upgrade))) {
     return false;
   }
 
@@ -1839,6 +1951,8 @@ export function applyLoadedState(loadedState = {}) {
   gameState.containmentLevel = clampNonNegative(Math.floor(Number(gameState.containmentLevel) || 0));
   gameState.autoSellEnabled = Boolean(gameState.autoSellEnabled);
   gameState.autoSellThreshold = clampNonNegative(Math.floor(Number(gameState.autoSellThreshold) || 0));
+  gameState.autoExportUnlocked = Boolean(gameState.autoExportUnlocked);
+  gameState.autoExportEnabled = Boolean(gameState.autoExportEnabled) && gameState.autoExportUnlocked;
 
   gameState.unlockedBuyerIds = sanitizeIds(gameState.unlockedBuyerIds, buyerById);
   gameState.purchasedUpgradeIds = sanitizeIds(gameState.purchasedUpgradeIds, upgradeById);
@@ -1963,6 +2077,7 @@ export function applyOfflineProgress(elapsedSeconds) {
   gameState.tree = treeHarvestSystem.serialize();
   processWeirdScienceConverters(safeElapsedSeconds);
   gameState.lastTickTime = Date.now();
+  performAutoExport();
   performAutoSell();
   assertFiniteCoreState("applyOfflineProgress");
   logEconomyDebug("offline-after", {
@@ -2010,6 +2125,7 @@ export function tick() {
   });
   gameState.tree = treeHarvestSystem.serialize();
   processWeirdScienceConverters(elapsedSeconds);
+  performAutoExport();
   performAutoSell();
   assertFiniteCoreState("tick");
   const tickEnd = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -2309,41 +2425,7 @@ export function getLiveEventStatus() {
 
 export function shipToBuyer(buyerId, amount, bananaTypeId = null) {
   const buyer = buyerById.get(buyerId);
-  if (!buyer || !isBuyerUnlocked(buyerId)) {
-    return false;
-  }
-
-  if (getBuyerCooldownRemainingSeconds(buyerId) > 0) {
-    return false;
-  }
-
-  const shipmentAmount = Math.floor(clampNonNegative(Number(amount) || 0));
-  const lane = getSelectedShippingLane();
-  const maxAllowedShipment = Math.min(buyer.maxShipment, getEffectiveShippingLaneCapacity(lane));
-  if (shipmentAmount < buyer.minShipment || shipmentAmount > maxAllowedShipment) {
-    return false;
-  }
-
-  if (gameState.bananas < shipmentAmount) {
-    changeBuyerReputation(buyerId, -0.8);
-    notifyListeners();
-    return false;
-  }
-
-  const revenue = shipmentAmount * getBuyerEffectivePricePerBanana(buyer);
-  removeBananas(shipmentAmount);
-  addCash(revenue);
-  gameState.totalShipments += shipmentAmount;
-  changeBuyerReputation(buyerId, 0.9);
-  const currentShipped = gameState.lifetimeBuyerShipmentTotals[buyerId] || 0;
-  gameState.lifetimeBuyerShipmentTotals[buyerId] = addStable(currentShipped, shipmentAmount);
-  applyShipmentToContracts(buyerId, shipmentAmount);
-
-  const cooldownMs = buyer.cooldownSeconds * gameState.exportCooldownMultiplier * 1000;
-  gameState.buyerCooldowns[buyerId] = Date.now() + Math.max(1000, cooldownMs);
-
-  notifyListeners();
-  return true;
+  return tryShipToBuyerInternal(buyer, amount, { applyPenaltyOnInsufficient: true, notify: true });
 }
 
 export function prestigeReset() {
@@ -2379,6 +2461,8 @@ export function prestigeReset() {
   gameState.containmentLevel = 0;
   gameState.autoSellEnabled = false;
   gameState.autoSellThreshold = DEFAULT_STATE.autoSellThreshold;
+  gameState.autoExportUnlocked = false;
+  gameState.autoExportEnabled = false;
   gameState.evolutionProductionMultiplier = 1;
   gameState.totalBananasEarned = 0;
   gameState.totalCashEarned = 0;

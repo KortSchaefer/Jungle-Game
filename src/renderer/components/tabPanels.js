@@ -113,6 +113,14 @@ export function renderTabPanels() {
 
         <section id="exportPanel" class="tab-panel core-panel is-active" aria-label="Exporting">
           <div class="ui-card">
+            <h3>Export Automation</h3>
+            <p id="autoExportStatusText">Auto-Export locked.</p>
+            <button id="autoExportBtn" type="button" title="Unlocks automatic max-size shipments when buyers are ready">
+              Unlock Auto-Export
+            </button>
+          </div>
+
+          <div class="ui-card">
             <h3>Shipping Lane</h3>
             <label class="toggle-row" for="shippingLaneSelect">
               <span>Lane</span>

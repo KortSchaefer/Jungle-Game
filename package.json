@@ -1,11 +1,12 @@
 {
   "name": "enterprise-software-electron",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Base Electron app scaffold",
   "main": "src/main/main.js",
   "build": {
     "appId": "com.monkeybananaholdings.junglegame",
     "productName": "Jungle Game",
+    "icon": "src/main/monkey.png",
     "publish": [
       {
         "provider": "github",
@@ -24,6 +25,7 @@
     ],
     "asar": true,
     "win": {
+      "icon": "src/main/monkey.png",
       "target": [
         "nsis"
       ]
