@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   treeDebugEnabled: false,
   companyName: "Monkey Banana Holdings",
   activeSaveSlot: 1,
+  leaderboardApiBaseUrl: "",
   playerId: "",
   displayName: DEFAULT_DISPLAY_NAME,
   avatarEmoji: "🐵",
@@ -84,6 +85,7 @@ function sanitizeSettings(raw, options = {}) {
   next.activeSaveSlot = [1, 2, 3].includes(slotId) ? slotId : 1;
   const companyName = String(next.companyName || DEFAULT_SETTINGS.companyName).trim();
   next.companyName = companyName || DEFAULT_SETTINGS.companyName;
+  next.leaderboardApiBaseUrl = String(next.leaderboardApiBaseUrl || "").trim().replace(/\/+$/, "");
   next.playerId = String(next.playerId || "").trim() || generatePlayerId();
   next.createdAt = Number(next.createdAt) > 0 ? Number(next.createdAt) : Date.now();
   next.displayName = sanitizeDisplayName(next.displayName);

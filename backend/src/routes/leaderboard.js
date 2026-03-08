@@ -54,6 +54,39 @@ export async function leaderboardRoutes(fastify) {
     });
   });
 
+  fastify.get("/leaderboard/me", { preHandler: authPreHandler }, async (request, reply) => {
+    const result = await query(
+      `SELECT p.id, p.display_name, p.created_at, p.last_seen_at,
+              l.prestige_count, l.pip, l.total_bananas_earned, l.updated_at, l.client_version, l.last_session_id
+       FROM players p
+       LEFT JOIN leaderboard_stats l ON l.player_id = p.id
+       WHERE p.id = $1`,
+      [request.session.playerId]
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      return reply.code(404).send({ error: "player_not_found" });
+    }
+
+    return reply.send({
+      source: "postgres",
+      serverTime: new Date().toISOString(),
+      player: {
+        playerId: row.id,
+        displayName: row.display_name,
+        createdAt: new Date(row.created_at).toISOString(),
+        lastSeenAt: new Date(row.last_seen_at).toISOString(),
+        prestigeCount: Number(row.prestige_count || 0),
+        pip: String(row.pip || 0),
+        totalBananasEarned: String(row.total_bananas_earned || 0),
+        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+        clientVersion: row.client_version || null,
+        lastSessionId: row.last_session_id || null,
+      },
+    });
+  });
+
   fastify.post("/leaderboard/submit", { preHandler: authPreHandler }, async (request, reply) => {
     prunePlayerRateLimitBuckets();
 

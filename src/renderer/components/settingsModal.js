@@ -34,6 +34,10 @@ export function renderSettingsModal() {
         <div class="ui-card">
           <h4>Player Identity</h4>
           <p id="playerIdText">Player ID: -</p>
+          <label class="toggle-row" for="leaderboardApiUrlInput">
+            <span>Leaderboard API URL</span>
+            <input id="leaderboardApiUrlInput" type="text" placeholder="https://your-render-service.onrender.com" />
+          </label>
           <label class="toggle-row" for="displayNameInput">
             <span>Display Name</span>
             <input id="displayNameInput" type="text" minlength="3" maxlength="16" placeholder="Banana CEO" />

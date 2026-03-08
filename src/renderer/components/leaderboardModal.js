@@ -12,6 +12,7 @@ export function renderLeaderboardModal() {
         </div>
         <p id="leaderboardUpdatedText">Last updated: -</p>
         <p id="leaderboardStatusText">Loading leaderboard...</p>
+        <p id="leaderboardProofText">Shared DB proof: pending.</p>
         <div id="leaderboardList" class="buyers-list"></div>
       </div>
     </div>

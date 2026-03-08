@@ -61,6 +61,7 @@ import {
 import { formatGameNumber } from "./numbers.js";
 import { themedUpgradeNames } from "./researchTree.js";
 import { treeTextures } from "./textureAssets.js";
+import { fetchLeaderboard, fetchLeaderboardMe, startLeaderboardSession, submitLeaderboardStats } from "./leaderboardApi.js";
 import { canChangeDisplayName, completeRegistration, loadUISettings, setUISettings, updateDisplayName } from "./settings.js";
 import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
 import { TreeHarvestView } from "./treeHarvestView.js";
@@ -226,6 +227,7 @@ export function mountUI(container) {
     debugRenderText: container.querySelector("#debugRenderText"),
     debugFpsText: container.querySelector("#debugFpsText"),
     companyNameInput: container.querySelector("#companyNameInput"),
+    leaderboardApiUrlInput: container.querySelector("#leaderboardApiUrlInput"),
     playerIdText: container.querySelector("#playerIdText"),
     displayNameInput: container.querySelector("#displayNameInput"),
     avatarEmojiInput: container.querySelector("#avatarEmojiInput"),
@@ -331,6 +333,7 @@ export function mountUI(container) {
     closeLeaderboardBtn: container.querySelector("#closeLeaderboardBtn"),
     refreshLeaderboardBtn: container.querySelector("#refreshLeaderboardBtn"),
     leaderboardStatusText: container.querySelector("#leaderboardStatusText"),
+    leaderboardProofText: container.querySelector("#leaderboardProofText"),
     leaderboardUpdatedText: container.querySelector("#leaderboardUpdatedText"),
     leaderboardList: container.querySelector("#leaderboardList"),
     registrationModal: container.querySelector("#registrationModal"),
@@ -373,6 +376,9 @@ export function mountUI(container) {
   }
 
   elements.companyNameInput.value = settings.companyName;
+  if (elements.leaderboardApiUrlInput) {
+    elements.leaderboardApiUrlInput.value = settings.leaderboardApiBaseUrl || "";
+  }
   elements.autosaveToggle.checked = settings.autosaveEnabled;
   elements.numberFormatSelect.value = settings.numberFormat;
   elements.soundToggle.checked = settings.soundEnabled;
@@ -412,6 +418,9 @@ export function mountUI(container) {
     if (elements.playerIdText) {
       setTextIfChanged(elements.playerIdText, `Player ID: ${identity.playerId || "-"}`);
     }
+    if (elements.leaderboardApiUrlInput) {
+      setValueIfChanged(elements.leaderboardApiUrlInput, identity.leaderboardApiBaseUrl || "");
+    }
     if (elements.displayNameInput) {
       setValueIfChanged(elements.displayNameInput, identity.displayName || "Banana CEO");
     }
@@ -435,35 +444,7 @@ export function mountUI(container) {
     }
   };
 
-  const mockLeaderboardProvider = async () => {
-    const now = Date.now();
-    await new Promise((resolve) => window.setTimeout(resolve, 220));
-    if (Math.random() < 0.08) {
-      throw new Error("Leaderboard service unavailable.");
-    }
-
-    const sample = [
-      { playerId: "mock-1", displayName: "Ape Capital", prestigeCount: 18, pip: 812 },
-      { playerId: "mock-2", displayName: "Banana Baron", prestigeCount: 15, pip: 640 },
-      { playerId: "mock-3", displayName: "CitrusChimp", prestigeCount: 12, pip: 501 },
-      { playerId: "mock-4", displayName: "Tree Tycoon", prestigeCount: 10, pip: 390 },
-      { playerId: "mock-5", displayName: "Jungle Exec", prestigeCount: 8, pip: 280 },
-    ];
-    sample.push({
-      playerId: settings.playerId,
-      displayName: settings.displayName,
-      prestigeCount: Math.max(0, Number(gameState.prestigeCount) || 0),
-      pip: Math.max(0, Number(gameState.pip) || 0),
-      local: true,
-    });
-
-    const sorted = sample.sort((a, b) => (b.pip - a.pip) || (b.prestigeCount - a.prestigeCount));
-    const ranked = sorted.map((entry, index) => ({ ...entry, rank: index + 1 }));
-    return {
-      updatedAt: now,
-      entries: ranked.slice(0, 12),
-    };
-  };
+  const clientVersion = "1.0.5";
 
   let leaderboardLoading = false;
   const refreshLeaderboard = async () => {
@@ -471,18 +452,57 @@ export function mountUI(container) {
       return;
     }
     leaderboardLoading = true;
+    const baseUrl = String(settings.leaderboardApiBaseUrl || "").trim().replace(/\/+$/, "");
+    if (!baseUrl) {
+      setTextIfChanged(elements.leaderboardStatusText, "Set a Leaderboard API URL in Settings to enable shared leaderboard sync.");
+      setTextIfChanged(elements.leaderboardProofText, "Shared DB proof: not configured.");
+      setHtmlIfChanged(elements.leaderboardList, "");
+      leaderboardLoading = false;
+      return;
+    }
+
     setTextIfChanged(elements.leaderboardStatusText, "Loading leaderboard...");
+    setTextIfChanged(elements.leaderboardProofText, "Shared DB proof: connecting...");
     setHtmlIfChanged(elements.leaderboardList, "");
     try {
-      const payload = await mockLeaderboardProvider();
-      setTextIfChanged(elements.leaderboardUpdatedText, `Last updated: ${new Date(payload.updatedAt).toLocaleString()}`);
-      setTextIfChanged(elements.leaderboardStatusText, payload.entries.length ? "" : "No entries yet.");
+      const session = await startLeaderboardSession({
+        baseUrl,
+        playerId: settings.playerId,
+        displayName: settings.displayName,
+        clientVersion,
+      });
+
+      await submitLeaderboardStats({
+        baseUrl,
+        token: session.token,
+        playerId: settings.playerId,
+        sessionId: session.sessionId,
+        prestigeCount: Math.max(0, Number(gameState.prestigeCount) || 0),
+        pip: Math.max(0, Number(gameState.pip) || 0),
+        totalBananasEarned: Math.max(0, Number(gameState.totalBananasEarned) || 0),
+        clientVersion,
+      });
+
+      const [payload, me] = await Promise.all([
+        fetchLeaderboard({ baseUrl, limit: 25 }),
+        fetchLeaderboardMe({ baseUrl, token: session.token }),
+      ]);
+
+      setTextIfChanged(elements.leaderboardUpdatedText, `Last updated: ${new Date(payload.lastUpdatedAt || Date.now()).toLocaleString()}`);
+      setTextIfChanged(
+        elements.leaderboardStatusText,
+        payload.entries.length ? `Connected to ${baseUrl}` : `Connected to ${baseUrl}, no entries yet.`
+      );
+      setTextIfChanged(
+        elements.leaderboardProofText,
+        `Shared DB proof: confirmed as ${me.player.displayName} (${me.player.playerId}), source=${me.source}, last DB update ${me.player.updatedAt ? new Date(me.player.updatedAt).toLocaleString() : "pending"}`
+      );
       setHtmlIfChanged(
         elements.leaderboardList,
-        payload.entries.length
+        Array.isArray(payload.entries) && payload.entries.length
           ? payload.entries
               .map((entry) => {
-                const isLocal = entry.playerId === settings.playerId || entry.local;
+                const isLocal = entry.playerId === settings.playerId;
                 return `<div class="buyer-card ${isLocal ? "is-local-entry" : ""}">
               <p class="buyer-name">#${entry.rank} ${entry.displayName}${isLocal ? " (You)" : ""}</p>
               <p>Prestige: ${entry.prestigeCount}</p>
@@ -493,9 +513,10 @@ export function mountUI(container) {
           : "<p>No leaderboard entries available.</p>"
       );
     } catch (error) {
-      setTextIfChanged(elements.leaderboardStatusText, "Error loading leaderboard. Try refresh.");
+      setTextIfChanged(elements.leaderboardStatusText, "Error loading leaderboard. Check API URL, deployment, or backend logs.");
+      setTextIfChanged(elements.leaderboardProofText, `Shared DB proof: failed (${error?.message || "unknown error"}).`);
       setHtmlIfChanged(elements.leaderboardList, "");
-      console.error("[Leaderboard] Failed to load mock leaderboard.", error);
+      console.error("[Leaderboard] Failed to load shared leaderboard.", error);
     } finally {
       leaderboardLoading = false;
     }
@@ -554,6 +575,13 @@ export function mountUI(container) {
     const next = setUISettings({ companyName });
     elements.companyNameInput.value = next.companyName;
   });
+  if (elements.leaderboardApiUrlInput) {
+    elements.leaderboardApiUrlInput.addEventListener("change", () => {
+      const next = setUISettings({ leaderboardApiBaseUrl: elements.leaderboardApiUrlInput.value });
+      settings.leaderboardApiBaseUrl = next.leaderboardApiBaseUrl;
+      syncIdentityUi(settings);
+    });
+  }
   elements.saveIdentityBtn.addEventListener("click", () => {
     const nextAvatar = String(elements.avatarEmojiInput.value || "").trim().slice(0, 2) || "🐵";
     const desiredName = elements.displayNameInput.value;
