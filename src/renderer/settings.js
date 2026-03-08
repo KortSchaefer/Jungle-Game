@@ -4,6 +4,7 @@ const DISPLAY_NAME_MIN_LENGTH = 3;
 const DISPLAY_NAME_MAX_LENGTH = 16;
 const DISPLAY_NAME_CHANGE_COOLDOWN_MS = 60 * 1000;
 const DEFAULT_DISPLAY_NAME = "Banana CEO";
+const DEFAULT_LEADERBOARD_API_BASE_URL = "https://jungle-game.onrender.com";
 const BUYER_TIER_ORDER = Object.freeze(["Local", "Corporate", "Global", "Interstellar", "Cosmic"]);
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -14,7 +15,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   treeDebugEnabled: false,
   companyName: "Monkey Banana Holdings",
   activeSaveSlot: 1,
-  leaderboardApiBaseUrl: "",
+  leaderboardApiBaseUrl: DEFAULT_LEADERBOARD_API_BASE_URL,
   playerId: "",
   displayName: DEFAULT_DISPLAY_NAME,
   avatarEmoji: "🐵",
@@ -85,7 +86,7 @@ function sanitizeSettings(raw, options = {}) {
   next.activeSaveSlot = [1, 2, 3].includes(slotId) ? slotId : 1;
   const companyName = String(next.companyName || DEFAULT_SETTINGS.companyName).trim();
   next.companyName = companyName || DEFAULT_SETTINGS.companyName;
-  next.leaderboardApiBaseUrl = String(next.leaderboardApiBaseUrl || "").trim().replace(/\/+$/, "");
+  next.leaderboardApiBaseUrl = String(next.leaderboardApiBaseUrl || DEFAULT_LEADERBOARD_API_BASE_URL).trim().replace(/\/+$/, "");
   next.playerId = String(next.playerId || "").trim() || generatePlayerId();
   next.createdAt = Number(next.createdAt) > 0 ? Number(next.createdAt) : Date.now();
   next.displayName = sanitizeDisplayName(next.displayName);

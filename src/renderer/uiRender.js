@@ -227,7 +227,6 @@ export function mountUI(container) {
     debugRenderText: container.querySelector("#debugRenderText"),
     debugFpsText: container.querySelector("#debugFpsText"),
     companyNameInput: container.querySelector("#companyNameInput"),
-    leaderboardApiUrlInput: container.querySelector("#leaderboardApiUrlInput"),
     playerIdText: container.querySelector("#playerIdText"),
     displayNameInput: container.querySelector("#displayNameInput"),
     avatarEmojiInput: container.querySelector("#avatarEmojiInput"),
@@ -376,9 +375,6 @@ export function mountUI(container) {
   }
 
   elements.companyNameInput.value = settings.companyName;
-  if (elements.leaderboardApiUrlInput) {
-    elements.leaderboardApiUrlInput.value = settings.leaderboardApiBaseUrl || "";
-  }
   elements.autosaveToggle.checked = settings.autosaveEnabled;
   elements.numberFormatSelect.value = settings.numberFormat;
   elements.soundToggle.checked = settings.soundEnabled;
@@ -418,9 +414,6 @@ export function mountUI(container) {
     if (elements.playerIdText) {
       setTextIfChanged(elements.playerIdText, `Player ID: ${identity.playerId || "-"}`);
     }
-    if (elements.leaderboardApiUrlInput) {
-      setValueIfChanged(elements.leaderboardApiUrlInput, identity.leaderboardApiBaseUrl || "");
-    }
     if (elements.displayNameInput) {
       setValueIfChanged(elements.displayNameInput, identity.displayName || "Banana CEO");
     }
@@ -454,7 +447,7 @@ export function mountUI(container) {
     leaderboardLoading = true;
     const baseUrl = String(settings.leaderboardApiBaseUrl || "").trim().replace(/\/+$/, "");
     if (!baseUrl) {
-      setTextIfChanged(elements.leaderboardStatusText, "Set a Leaderboard API URL in Settings to enable shared leaderboard sync.");
+      setTextIfChanged(elements.leaderboardStatusText, "Leaderboard API is not configured.");
       setTextIfChanged(elements.leaderboardProofText, "Shared DB proof: not configured.");
       setHtmlIfChanged(elements.leaderboardList, "");
       leaderboardLoading = false;
@@ -472,16 +465,22 @@ export function mountUI(container) {
         clientVersion,
       });
 
-      await submitLeaderboardStats({
-        baseUrl,
-        token: session.token,
-        playerId: settings.playerId,
-        sessionId: session.sessionId,
-        prestigeCount: Math.max(0, Number(gameState.prestigeCount) || 0),
-        pip: Math.max(0, Number(gameState.pip) || 0),
-        totalBananasEarned: Math.max(0, Number(gameState.totalBananasEarned) || 0),
-        clientVersion,
-      });
+      let submitOutcome = "Stats synced.";
+      try {
+        await submitLeaderboardStats({
+          baseUrl,
+          token: session.token,
+          playerId: settings.playerId,
+          sessionId: session.sessionId,
+          prestigeCount: Math.max(0, Number(gameState.prestigeCount) || 0),
+          pip: Math.max(0, Number(gameState.pip) || 0),
+          totalBananasEarned: Math.max(0, Number(gameState.totalBananasEarned) || 0),
+          clientVersion,
+        });
+      } catch (submitError) {
+        const submitReason = submitError?.payload?.reason || submitError?.payload?.error || submitError?.message || "submit failed";
+        submitOutcome = `Stats not accepted: ${submitReason}.`;
+      }
 
       const [payload, me] = await Promise.all([
         fetchLeaderboard({ baseUrl, limit: 25 }),
@@ -491,7 +490,7 @@ export function mountUI(container) {
       setTextIfChanged(elements.leaderboardUpdatedText, `Last updated: ${new Date(payload.lastUpdatedAt || Date.now()).toLocaleString()}`);
       setTextIfChanged(
         elements.leaderboardStatusText,
-        payload.entries.length ? `Connected to ${baseUrl}` : `Connected to ${baseUrl}, no entries yet.`
+        payload.entries.length ? `Connected to ${baseUrl}. ${submitOutcome}` : `Connected to ${baseUrl}, no entries yet. ${submitOutcome}`
       );
       setTextIfChanged(
         elements.leaderboardProofText,
@@ -575,13 +574,6 @@ export function mountUI(container) {
     const next = setUISettings({ companyName });
     elements.companyNameInput.value = next.companyName;
   });
-  if (elements.leaderboardApiUrlInput) {
-    elements.leaderboardApiUrlInput.addEventListener("change", () => {
-      const next = setUISettings({ leaderboardApiBaseUrl: elements.leaderboardApiUrlInput.value });
-      settings.leaderboardApiBaseUrl = next.leaderboardApiBaseUrl;
-      syncIdentityUi(settings);
-    });
-  }
   elements.saveIdentityBtn.addEventListener("click", () => {
     const nextAvatar = String(elements.avatarEmojiInput.value || "").trim().slice(0, 2) || "🐵";
     const desiredName = elements.displayNameInput.value;
