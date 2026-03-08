@@ -28,6 +28,7 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN || "*",
   globalRateLimitMaxPerMinute: toNumber(process.env.RATE_LIMIT_MAX_PER_MINUTE, 120),
   submitRateLimitPerPlayerPerMinute: toNumber(process.env.SUBMIT_RATE_LIMIT_PER_PLAYER_PER_MINUTE, 20),
+  autoMigrateOnStart: toBoolean(process.env.AUTO_MIGRATE_ON_START, true),
 };
 
 if (!config.sessionSigningSecret || config.sessionSigningSecret.length < 24) {

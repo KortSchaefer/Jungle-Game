@@ -9,13 +9,14 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
+    "migrate": "node src/migrate-cli.js",
+    "start:migrated": "npm run migrate && npm start",
     "lint": "echo \"No linter configured\""
   },
   "dependencies": {
     "@fastify/cors": "^10.1.0",
     "@fastify/rate-limit": "^10.3.0",
     "dotenv": "^16.6.1",
-    "enterprise-software-electron": "file:..",
     "fastify": "^5.6.1",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.16.3",

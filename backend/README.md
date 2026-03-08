@@ -33,13 +33,13 @@ backend/
 
 1. Create database:
    - `createdb jungle_game`
-2. Apply schema:
-   - `psql -d jungle_game -f migrations/001_init.sql`
-3. Install deps:
+2. Install deps:
    - `cd backend && npm install`
-4. Configure env:
+3. Configure env:
    - copy `.env.example` to `.env`
    - set `DATABASE_URL` and `SESSION_SIGNING_SECRET`
+4. Run migrations (no psql required):
+   - `npm run migrate`
 5. Run API:
    - `npm run dev`
 
@@ -157,7 +157,18 @@ curl "http://localhost:8787/leaderboard?limit=25"
 4. Start: `npm start`.
 5. Add env vars from `.env.example`.
 6. Use managed Postgres and set `DATABASE_URL`.
-7. Run `migrations/001_init.sql` once.
+7. Optional: if you disable `AUTO_MIGRATE_ON_START`, run `npm run migrate` during deploy.
+
+### No SQL Tooling Flow
+
+If pgAdmin/PgHero/psql is unavailable, you can still migrate with app code:
+
+```bash
+cd backend
+npm run migrate
+```
+
+Or rely on startup auto-migrations (`AUTO_MIGRATE_ON_START=true`), which is enabled by default.
 
 ### Railway
 

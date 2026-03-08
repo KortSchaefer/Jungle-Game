@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { config } from "./config.js";
 import { closeDb, query } from "./db.js";
+import { runMigrations } from "./migrate.js";
 import { leaderboardRoutes } from "./routes/leaderboard.js";
 import { sessionRoutes } from "./routes/session.js";
 
@@ -66,6 +67,10 @@ closeSignals.forEach((signal) => {
 });
 
 try {
+  if (config.autoMigrateOnStart) {
+    await runMigrations(app.log);
+  }
+
   await app.listen({
     host: config.host,
     port: config.port,
