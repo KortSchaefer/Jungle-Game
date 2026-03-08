@@ -233,6 +233,12 @@ textarea {
   gap: 0.75rem;
 }
 
+.main-view,
+.upgrades-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
 .top-nav {
   display: flex;
   flex-wrap: wrap;
@@ -511,6 +517,14 @@ button:disabled {
 
 .upgrades-panel {
   margin-top: 0.15rem;
+  align-content: start;
+}
+
+.upgrades-head {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 0.1rem;
 }
 
 .building-row {
@@ -523,6 +537,32 @@ button:disabled {
 .buyers-list {
   display: grid;
   gap: 0.55rem;
+}
+
+.buyer-tier-group {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f6faf4;
+  overflow: hidden;
+}
+
+.buyer-tier-toggle {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: #e7f2e4;
+  text-align: left;
+  font-weight: 600;
+  padding: 0.62rem 0.75rem;
+}
+
+.buyer-tier-toggle[aria-expanded="true"] {
+  background: #def0da;
+}
+
+.buyer-tier-panel {
+  padding: 0.55rem;
 }
 
 .buyer-card {
@@ -677,6 +717,22 @@ button:disabled {
   z-index: 1;
   display: grid;
   gap: 0.65rem;
+}
+
+.leaderboard-content {
+  width: min(560px, 94vw);
+  max-height: 82vh;
+  overflow: auto;
+}
+
+.buyer-card.is-local-entry {
+  border-color: #6f9f72;
+  background: #e5f3e3;
+}
+
+.form-hint {
+  font-size: 0.83rem;
+  color: var(--danger);
 }
 
 .settings-head {

@@ -6,7 +6,7 @@ import { TreeHarvestSystem, getDefaultTreeState } from "./treeHarvestSystem.js";
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 7;
+export const GAME_STATE_SCHEMA_VERSION = 8;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
@@ -85,6 +85,187 @@ const TREE_HARVEST_UPGRADES = Object.freeze([
     description: "Reduces shake cooldown.",
     costCash: 14000,
     effect: { shakeCooldownMultiplier: 0.7 },
+  },
+]);
+
+export const pipUpgrades = Object.freeze([
+  {
+    id: "pip_prod_foundation",
+    name: "Jungle Foundations",
+    description: "Permanent production boost.",
+    category: "Production",
+    maxRank: 12,
+    baseCostPip: 1,
+    costGrowth: 1.5,
+    effect: { productionMultiplierPerRank: 1.06 },
+  },
+  {
+    id: "pip_prod_canopy",
+    name: "Canopy Expansion",
+    description: "Adds more banana slots on every run.",
+    category: "Production",
+    maxRank: 8,
+    baseCostPip: 2,
+    costGrowth: 1.65,
+    unlockCondition: { type: "totalBananasEarned", value: 20_000 },
+    effect: { maxBananasFlatPerRank: 2 },
+  },
+  {
+    id: "pip_prod_ripening",
+    name: "Accelerated Ripening",
+    description: "Bananas spawn faster permanently.",
+    category: "Production",
+    maxRank: 10,
+    baseCostPip: 3,
+    costGrowth: 1.65,
+    unlockCondition: { type: "treesOwned", value: 20 },
+    effect: { spawnIntervalMultiplierPerRank: 0.96 },
+  },
+  {
+    id: "pip_prod_foreman",
+    name: "Foreman Training",
+    description: "Workers pick faster each prestige cycle.",
+    category: "Production",
+    maxRank: 8,
+    baseCostPip: 5,
+    costGrowth: 1.75,
+    unlockCondition: { type: "treeTierIndex", value: 3 },
+    effect: { workerPickMultiplierPerRank: 1.09 },
+  },
+  {
+    id: "pip_click_grip",
+    name: "Executive Grip",
+    description: "Permanent click harvest strength.",
+    category: "Clicking",
+    maxRank: 12,
+    baseCostPip: 1,
+    costGrowth: 1.5,
+    effect: { clickMultiplierPerRank: 1.07 },
+  },
+  {
+    id: "pip_click_precision",
+    name: "Precision Picking",
+    description: "Further improves click yield on tree harvest.",
+    category: "Clicking",
+    maxRank: 8,
+    baseCostPip: 3,
+    costGrowth: 1.7,
+    unlockCondition: { type: "totalBananasEarned", value: 60_000 },
+    effect: { clickYieldMultiplierPerRank: 1.06 },
+  },
+  {
+    id: "pip_click_golden",
+    name: "Golden Insight",
+    description: "Raises golden spawn odds and payout.",
+    category: "Clicking",
+    maxRank: 6,
+    baseCostPip: 5,
+    costGrowth: 1.85,
+    unlockCondition: { type: "treeTierIndex", value: 4 },
+    effect: { goldenChanceAddPerRank: 0.0025, goldenMultiplierAddPerRank: 8 },
+  },
+  {
+    id: "pip_click_shaker",
+    name: "Hydraulic Shaker",
+    description: "Lower Shake Tree cooldown permanently.",
+    category: "Clicking",
+    maxRank: 6,
+    baseCostPip: 6,
+    costGrowth: 1.85,
+    unlockCondition: { type: "treeTierIndex", value: 4 },
+    effect: { shakeCooldownMultiplierPerRank: 0.95 },
+  },
+  {
+    id: "pip_export_brand",
+    name: "Premium Branding",
+    description: "Permanent export price increase.",
+    category: "Export",
+    maxRank: 10,
+    baseCostPip: 2,
+    costGrowth: 1.6,
+    effect: { exportPriceMultiplierPerRank: 1.05 },
+  },
+  {
+    id: "pip_export_coldchain",
+    name: "Cold Chain Mastery",
+    description: "Reduces buyer cooldowns globally.",
+    category: "Export",
+    maxRank: 8,
+    baseCostPip: 4,
+    costGrowth: 1.7,
+    unlockCondition: { type: "totalBananasEarned", value: 40_000 },
+    effect: { exportCooldownMultiplierPerRank: 0.96 },
+  },
+  {
+    id: "pip_export_lane",
+    name: "Lane Infrastructure",
+    description: "Increases shipping lane capacity.",
+    category: "Export",
+    maxRank: 8,
+    baseCostPip: 5,
+    costGrowth: 1.75,
+    unlockCondition: { type: "treeTierIndex", value: 3 },
+    effect: { shippingCapacityMultiplierPerRank: 1.08 },
+  },
+  {
+    id: "pip_export_orchard",
+    name: "Orchard Routing",
+    description: "Orchards auto-pick faster.",
+    category: "Export",
+    maxRank: 6,
+    baseCostPip: 7,
+    costGrowth: 1.9,
+    unlockCondition: { type: "treeTierIndex", value: 5 },
+    effect: { orchardPickMultiplierPerRank: 1.12 },
+  },
+  {
+    id: "pip_qol_broker",
+    name: "Market Broker",
+    description: "Improves auto-sell fallback price.",
+    category: "QoL",
+    maxRank: 8,
+    baseCostPip: 2,
+    costGrowth: 1.65,
+    unlockCondition: { type: "cash", value: 10_000 },
+    effect: { autoSellPriceMultiplierPerRank: 1.08 },
+  },
+  {
+    id: "pip_qol_research",
+    name: "Research Endowment",
+    description: "Permanent research node cash discount.",
+    category: "QoL",
+    maxRank: 6,
+    baseCostPip: 4,
+    costGrowth: 1.75,
+    unlockCondition: { type: "treesOwned", value: 30 },
+    effect: { researchDiscountMultiplierPerRank: 0.97 },
+  },
+  {
+    id: "pip_qol_ceo",
+    name: "CEO Playbook",
+    description: "Small all-around production and export gain.",
+    category: "QoL",
+    maxRank: 5,
+    baseCostPip: 8,
+    costGrowth: 2.0,
+    unlockCondition: { type: "treeTierIndex", value: 5 },
+    effect: { productionMultiplierPerRank: 1.04, exportPriceMultiplierPerRank: 1.04 },
+  },
+  {
+    id: "pip_qol_legacy",
+    name: "Legacy Doctrine",
+    description: "Late-game permanent efficiency package.",
+    category: "QoL",
+    maxRank: 4,
+    baseCostPip: 12,
+    costGrowth: 2.1,
+    unlockCondition: { type: "totalBananasEarned", value: 1_500_000 },
+    effect: {
+      productionMultiplierPerRank: 1.06,
+      clickMultiplierPerRank: 1.05,
+      exportPriceMultiplierPerRank: 1.05,
+      workerPickMultiplierPerRank: 1.06,
+    },
   },
 ]);
 
@@ -254,6 +435,7 @@ const upgradeById = new Map(upgrades.map((upgrade) => [upgrade.id, upgrade]));
 const milestoneById = new Map(milestones.map((milestone) => [milestone.id, milestone]));
 const achievementById = new Map(achievements.map((achievement) => [achievement.id, achievement]));
 const treeHarvestUpgradeById = new Map(TREE_HARVEST_UPGRADES.map((upgrade) => [upgrade.id, upgrade]));
+const pipUpgradeById = new Map(pipUpgrades.map((upgrade) => [upgrade.id, upgrade]));
 
 const treeHarvestSystem = new TreeHarvestSystem({
   onHarvest: (harvestAmount, banana, context) => {
@@ -346,6 +528,9 @@ const DEFAULT_STATE = Object.freeze({
   rareItems: [],
   buyerCooldowns: {},
   pip: 0,
+  purchasedPipUpgrades: {},
+  pipSpentTotal: 0,
+  pipRespecCount: 0,
   prestigeCount: 0,
   lastSaveTimestamp: Date.now(),
 });
@@ -405,6 +590,7 @@ function assertFiniteCoreState(contextLabel) {
     ["workersBasePerSecond", DEFAULT_STATE.workersBasePerSecond],
     ["totalBananasEarned", 0],
     ["totalCashEarned", 0],
+    ["pipSpentTotal", 0],
     ["lastTickTime", Date.now()],
     ["lastSaveTimestamp", Date.now()],
   ];
@@ -530,6 +716,27 @@ function sanitizeTreeHarvestUpgradeIds(rawIds) {
   return Array.from(set).filter((id) => treeHarvestUpgradeById.has(id));
 }
 
+function sanitizePipUpgradeRanks(rawRanks) {
+  const sanitized = {};
+  if (!rawRanks || typeof rawRanks !== "object") {
+    return sanitized;
+  }
+
+  for (const [upgradeId, rankValue] of Object.entries(rawRanks)) {
+    const upgrade = pipUpgradeById.get(upgradeId);
+    if (!upgrade) {
+      continue;
+    }
+
+    const rank = clamp(Math.floor(Number(rankValue) || 0), 0, Math.max(1, Number(upgrade.maxRank) || 1));
+    if (rank > 0) {
+      sanitized[upgradeId] = rank;
+    }
+  }
+
+  return sanitized;
+}
+
 function sanitizeCeoEmailEntries(rawEmails) {
   if (!Array.isArray(rawEmails)) {
     return [];
@@ -577,6 +784,11 @@ function migrateLoadedState(rawState) {
   if (sourceSchemaVersion < 7) {
     migrated.autoExportUnlocked = false;
     migrated.autoExportEnabled = false;
+  }
+  if (sourceSchemaVersion < 8) {
+    migrated.purchasedPipUpgrades = {};
+    migrated.pipSpentTotal = 0;
+    migrated.pipRespecCount = 0;
   }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
@@ -690,7 +902,8 @@ function getFertilizerLabMultiplier() {
 }
 
 function getResearchDiscountMultiplier() {
-  return Math.max(0.55, 1 - getBuildingLevel("research_hut") * 0.03);
+  const pipModifiers = getPipModifiers();
+  return Math.max(0.35, (1 - getBuildingLevel("research_hut") * 0.03) * pipModifiers.researchDiscountMultiplier);
 }
 
 function getAntimatterExportBoostMultiplier() {
@@ -770,7 +983,8 @@ function getEffectiveShippingLaneCapacity(lane) {
   const baseCapacity = Math.max(1, Math.floor(Number(safeLane.capacity) || 1));
   const tierIndex = Math.max(0, Math.floor(Number(gameState.treeTierIndex) || 0));
   const tierMultiplier = 1 + tierIndex * SHIPPING_CAPACITY_PER_TIER;
-  return Math.max(1, Math.floor(baseCapacity * tierMultiplier));
+  const pipModifiers = getPipModifiers();
+  return Math.max(1, Math.floor(baseCapacity * tierMultiplier * pipModifiers.shippingCapacityMultiplier));
 }
 
 function getTierPickerUpdateCaps() {
@@ -792,13 +1006,14 @@ function recomputeDerivedStats() {
   const packingMultiplier = getPackingShedMultiplier();
   const achievementMultipliers = getAchievementMultipliers();
   const treeHarvestModifiers = getTreeHarvestModifiers();
+  const pipModifiers = getPipModifiers();
   const ceoGlobalMultiplier = getCeoGlobalMultiplier();
   const researchCompletionMultipliers = getResearchCompletionMultipliers();
 
-  gameState.productionMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.productionMultiplier));
-  gameState.clickMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * researchCompletionMultipliers.clickMultiplier));
-  gameState.exportPriceMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.exportPriceMultiplier * prestigeBonuses.exportPriceMultiplier * packingMultiplier * achievementMultipliers.exportPriceMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.exportPriceMultiplier));
-  gameState.exportCooldownMultiplier = Math.max(0.1, stabilizeNumber(upgradeModifiers.exportCooldownMultiplier));
+  gameState.productionMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * pipModifiers.productionMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.productionMultiplier));
+  gameState.clickMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * pipModifiers.clickMultiplier * researchCompletionMultipliers.clickMultiplier));
+  gameState.exportPriceMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.exportPriceMultiplier * prestigeBonuses.exportPriceMultiplier * packingMultiplier * achievementMultipliers.exportPriceMultiplier * pipModifiers.exportPriceMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.exportPriceMultiplier));
+  gameState.exportCooldownMultiplier = Math.max(0.1, stabilizeNumber(upgradeModifiers.exportCooldownMultiplier * pipModifiers.exportCooldownMultiplier));
   gameState.packedExportBonusMultiplier = stabilizeNumber(packingMultiplier);
 
   const tier = treeTiers[gameState.treeTierIndex];
@@ -823,21 +1038,23 @@ function recomputeDerivedStats() {
       1.5 *
       (Number(tierHarvest.spawnIntervalMultiplier) || 1) *
       treeHarvestModifiers.spawnIntervalMultiplier *
+      pipModifiers.spawnIntervalMultiplier *
       spawnIntervalMultiplierFromTrees *
       fertilizerSpawnMultiplier,
     maxBananasOnTree:
       12 +
       (Number(tierHarvest.maxBananasBonus) || 0) +
       treeHarvestModifiers.maxBananasFlat +
+      pipModifiers.maxBananasFlat +
       treeCapacityBonusFromTrees +
       fertilizerCapacityBonus,
-    clickHarvestYield: gameState.clickYield * (Number(tierHarvest.clickYieldMultiplier) || 1) * treeHarvestModifiers.clickYieldMultiplier,
-    goldenChance: 0.005 + (Number(tierHarvest.goldenChanceAdd) || 0) + treeHarvestModifiers.goldenChanceAdd,
-    goldenMultiplier: 35 + (Number(tierHarvest.goldenMultiplierAdd) || 0) + treeHarvestModifiers.goldenMultiplierAdd,
+    clickHarvestYield: gameState.clickYield * (Number(tierHarvest.clickYieldMultiplier) || 1) * treeHarvestModifiers.clickYieldMultiplier * pipModifiers.clickYieldMultiplier,
+    goldenChance: 0.005 + (Number(tierHarvest.goldenChanceAdd) || 0) + treeHarvestModifiers.goldenChanceAdd + pipModifiers.goldenChanceAdd,
+    goldenMultiplier: 35 + (Number(tierHarvest.goldenMultiplierAdd) || 0) + treeHarvestModifiers.goldenMultiplierAdd + pipModifiers.goldenMultiplierAdd,
     diamondChance: 0.0005 + (Number(tierHarvest.diamondChanceAdd) || 0) + treeHarvestModifiers.diamondChanceAdd,
     diamondMultiplier: 200 + (Number(tierHarvest.diamondMultiplierAdd) || 0) + treeHarvestModifiers.diamondMultiplierAdd,
     monkeyPickerInterval: treeHarvestModifiers.monkeyPickerInterval,
-    shakeCooldownSeconds: 35 * (Number(tierHarvest.shakeCooldownMultiplier) || 1) * treeHarvestModifiers.shakeCooldownMultiplier,
+    shakeCooldownSeconds: 35 * (Number(tierHarvest.shakeCooldownMultiplier) || 1) * treeHarvestModifiers.shakeCooldownMultiplier * pipModifiers.shakeCooldownMultiplier,
   });
   gameState.tree = treeHarvestSystem.serialize();
 }
@@ -1049,6 +1266,101 @@ function getTreeHarvestModifiers() {
   });
 
   return modifiers;
+}
+
+function getPipUpgradeRank(upgradeId) {
+  return clampNonNegative(Math.floor(Number(gameState.purchasedPipUpgrades?.[upgradeId]) || 0));
+}
+
+export function getPipModifiers() {
+  const modifiers = {
+    productionMultiplier: 1,
+    clickMultiplier: 1,
+    exportPriceMultiplier: 1,
+    exportCooldownMultiplier: 1,
+    workerPickMultiplier: 1,
+    spawnIntervalMultiplier: 1,
+    maxBananasFlat: 0,
+    clickYieldMultiplier: 1,
+    goldenChanceAdd: 0,
+    goldenMultiplierAdd: 0,
+    shakeCooldownMultiplier: 1,
+    shippingCapacityMultiplier: 1,
+    autoSellPriceMultiplier: 1,
+    researchDiscountMultiplier: 1,
+    orchardPickMultiplier: 1,
+  };
+
+  pipUpgrades.forEach((upgrade) => {
+    const rank = getPipUpgradeRank(upgrade.id);
+    if (rank <= 0 || !upgrade.effect) {
+      return;
+    }
+    const effect = upgrade.effect;
+    if (effect.productionMultiplierPerRank) {
+      modifiers.productionMultiplier *= effect.productionMultiplierPerRank ** rank;
+    }
+    if (effect.clickMultiplierPerRank) {
+      modifiers.clickMultiplier *= effect.clickMultiplierPerRank ** rank;
+    }
+    if (effect.exportPriceMultiplierPerRank) {
+      modifiers.exportPriceMultiplier *= effect.exportPriceMultiplierPerRank ** rank;
+    }
+    if (effect.exportCooldownMultiplierPerRank) {
+      modifiers.exportCooldownMultiplier *= effect.exportCooldownMultiplierPerRank ** rank;
+    }
+    if (effect.workerPickMultiplierPerRank) {
+      modifiers.workerPickMultiplier *= effect.workerPickMultiplierPerRank ** rank;
+    }
+    if (effect.spawnIntervalMultiplierPerRank) {
+      modifiers.spawnIntervalMultiplier *= effect.spawnIntervalMultiplierPerRank ** rank;
+    }
+    if (effect.maxBananasFlatPerRank) {
+      modifiers.maxBananasFlat += effect.maxBananasFlatPerRank * rank;
+    }
+    if (effect.clickYieldMultiplierPerRank) {
+      modifiers.clickYieldMultiplier *= effect.clickYieldMultiplierPerRank ** rank;
+    }
+    if (effect.goldenChanceAddPerRank) {
+      modifiers.goldenChanceAdd += effect.goldenChanceAddPerRank * rank;
+    }
+    if (effect.goldenMultiplierAddPerRank) {
+      modifiers.goldenMultiplierAdd += effect.goldenMultiplierAddPerRank * rank;
+    }
+    if (effect.shakeCooldownMultiplierPerRank) {
+      modifiers.shakeCooldownMultiplier *= effect.shakeCooldownMultiplierPerRank ** rank;
+    }
+    if (effect.shippingCapacityMultiplierPerRank) {
+      modifiers.shippingCapacityMultiplier *= effect.shippingCapacityMultiplierPerRank ** rank;
+    }
+    if (effect.autoSellPriceMultiplierPerRank) {
+      modifiers.autoSellPriceMultiplier *= effect.autoSellPriceMultiplierPerRank ** rank;
+    }
+    if (effect.researchDiscountMultiplierPerRank) {
+      modifiers.researchDiscountMultiplier *= effect.researchDiscountMultiplierPerRank ** rank;
+    }
+    if (effect.orchardPickMultiplierPerRank) {
+      modifiers.orchardPickMultiplier *= effect.orchardPickMultiplierPerRank ** rank;
+    }
+  });
+
+  return {
+    productionMultiplier: stabilizeNumber(modifiers.productionMultiplier),
+    clickMultiplier: stabilizeNumber(modifiers.clickMultiplier),
+    exportPriceMultiplier: stabilizeNumber(modifiers.exportPriceMultiplier),
+    exportCooldownMultiplier: Math.max(0.2, stabilizeNumber(modifiers.exportCooldownMultiplier)),
+    workerPickMultiplier: stabilizeNumber(modifiers.workerPickMultiplier),
+    spawnIntervalMultiplier: Math.max(0.2, stabilizeNumber(modifiers.spawnIntervalMultiplier)),
+    maxBananasFlat: Math.max(0, Math.floor(modifiers.maxBananasFlat)),
+    clickYieldMultiplier: stabilizeNumber(modifiers.clickYieldMultiplier),
+    goldenChanceAdd: Math.max(0, stabilizeNumber(modifiers.goldenChanceAdd)),
+    goldenMultiplierAdd: Math.max(0, stabilizeNumber(modifiers.goldenMultiplierAdd)),
+    shakeCooldownMultiplier: Math.max(0.2, stabilizeNumber(modifiers.shakeCooldownMultiplier)),
+    shippingCapacityMultiplier: stabilizeNumber(modifiers.shippingCapacityMultiplier),
+    autoSellPriceMultiplier: stabilizeNumber(modifiers.autoSellPriceMultiplier),
+    researchDiscountMultiplier: Math.max(0.5, stabilizeNumber(modifiers.researchDiscountMultiplier)),
+    orchardPickMultiplier: stabilizeNumber(modifiers.orchardPickMultiplier),
+  };
 }
 
 function refreshShippingLaneUnlocks() {
@@ -1558,7 +1870,8 @@ function getEstimatedAutoBananasPerSecond() {
   const tierWorkerPickMultiplier = Math.max(0.1, Number(tierHarvest.workerPickMultiplier) || 1);
   const baseWorkerPickRatePerSecond = gameState.workersOwned * (Math.max(0, Number(gameState.bananasPerWorkerPerSecond) || 0) / clickYield);
   // Keep in sync with TreeHarvestSystem's worker cap so the HUD estimate matches reality.
-  const workerPickRatePerSecondRaw = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier;
+  const pipModifiers = getPipModifiers();
+  const workerPickRatePerSecondRaw = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * pipModifiers.workerPickMultiplier;
   const workerPickRatePerSecond = Math.min(workerPickRatePerSecondRaw, spawnRatePerSecond * 0.8);
 
   const monkeyPickRatePerSecond = snapshot.monkeyPickerInterval > 0 ? 1 / Math.max(0.05, Number(snapshot.monkeyPickerInterval)) : 0;
@@ -1681,6 +1994,63 @@ export function getTreeHarvestUpgradesStatus() {
       canAfford: gameState.cash >= upgrade.costCash,
     };
   });
+}
+
+function getPipUpgradeNextCost(upgrade, rank) {
+  const safeRank = Math.max(0, Math.floor(Number(rank) || 0));
+  const maxRank = Math.max(1, Math.floor(Number(upgrade.maxRank) || 1));
+  if (safeRank >= maxRank) {
+    return 0;
+  }
+  const baseCost = Math.max(1, Number(upgrade.baseCostPip) || 1);
+  const growth = Math.max(1.01, Number(upgrade.costGrowth) || 1.2);
+  return Math.max(1, Math.ceil(baseCost * growth ** safeRank));
+}
+
+export function getPipUpgradeStatus() {
+  return pipUpgrades.map((upgrade) => {
+    const rank = getPipUpgradeRank(upgrade.id);
+    const maxRank = Math.max(1, Math.floor(Number(upgrade.maxRank) || 1));
+    const maxed = rank >= maxRank;
+    const unlocked = isRequirementMet(upgrade.unlockCondition);
+    const nextCost = maxed ? 0 : getPipUpgradeNextCost(upgrade, rank);
+    return {
+      ...upgrade,
+      rank,
+      nextCost,
+      unlocked,
+      canAfford: unlocked && !maxed && gameState.pip >= nextCost,
+      maxed,
+    };
+  });
+}
+
+export function purchasePipUpgrade(upgradeId) {
+  const upgrade = pipUpgradeById.get(upgradeId);
+  if (!upgrade) {
+    return false;
+  }
+
+  const rank = getPipUpgradeRank(upgrade.id);
+  const maxRank = Math.max(1, Math.floor(Number(upgrade.maxRank) || 1));
+  if (rank >= maxRank || !isRequirementMet(upgrade.unlockCondition)) {
+    return false;
+  }
+
+  const nextCost = getPipUpgradeNextCost(upgrade, rank);
+  if (gameState.pip < nextCost) {
+    return false;
+  }
+
+  gameState.pip = clampNonNegative(Math.floor(gameState.pip - nextCost));
+  gameState.purchasedPipUpgrades = {
+    ...gameState.purchasedPipUpgrades,
+    [upgrade.id]: rank + 1,
+  };
+  gameState.pipSpentTotal = clampNonNegative(Math.floor(Number(gameState.pipSpentTotal) || 0) + nextCost);
+  recomputeDerivedStats();
+  notifyListeners();
+  return true;
 }
 
 export function purchaseTreeHarvestUpgrade(upgradeId) {
@@ -1936,6 +2306,9 @@ export function applyLoadedState(loadedState = {}) {
   gameState.totalShipments = clampNonNegative(Math.floor(Number(gameState.totalShipments) || 0));
   gameState.contractsCompleted = clampNonNegative(Math.floor(Number(gameState.contractsCompleted) || 0));
   gameState.pip = clampNonNegative(Math.floor(Number(gameState.pip) || 0));
+  gameState.purchasedPipUpgrades = sanitizePipUpgradeRanks(gameState.purchasedPipUpgrades);
+  gameState.pipSpentTotal = clampNonNegative(Math.floor(Number(gameState.pipSpentTotal) || 0));
+  gameState.pipRespecCount = clampNonNegative(Math.floor(Number(gameState.pipRespecCount) || 0));
   gameState.prestigeCount = clampNonNegative(Math.floor(Number(gameState.prestigeCount) || 0));
 
   gameState.evolutionProductionMultiplier = Math.max(1, Number(gameState.evolutionProductionMultiplier) || 1);
@@ -2063,7 +2436,7 @@ export function applyOfflineProgress(elapsedSeconds) {
   const tierWorkerPickMultiplier = Math.max(0.1, Number(tierHarvest.workerPickMultiplier) || 1);
   const treeClickYield = Math.max(1, Number(gameState.tree?.clickHarvestYield) || 1);
   const baseWorkerPickRatePerSecond = gameState.workersOwned * (Math.max(0, Number(gameState.bananasPerWorkerPerSecond) || 0) / treeClickYield);
-  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier;
+  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * getPipModifiers().workerPickMultiplier;
   const orchardPickRatePerSecond = getOrchardPickRatePerSecond();
   const pickerCaps = getTierPickerUpdateCaps();
   treeHarvestSystem.update(safeElapsedSeconds, {
@@ -2113,7 +2486,7 @@ export function tick() {
   const tierWorkerPickMultiplier = Math.max(0.1, Number(tierHarvest.workerPickMultiplier) || 1);
   const treeClickYield = Math.max(1, Number(gameState.tree?.clickHarvestYield) || 1);
   const baseWorkerPickRatePerSecond = gameState.workersOwned * (Math.max(0, Number(gameState.bananasPerWorkerPerSecond) || 0) / treeClickYield);
-  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier;
+  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * getPipModifiers().workerPickMultiplier;
   const orchardPickRatePerSecond = getOrchardPickRatePerSecond();
   const pickerCaps = getTierPickerUpdateCaps();
   treeHarvestSystem.update(elapsedSeconds, {
@@ -2197,7 +2570,7 @@ export function getMarketPricePerBanana(bananaTypeId = null) {
 }
 
 export function getAutoSellPricePerBanana() {
-  return AUTO_SELL_PRICE_PER_BANANA;
+  return stabilizeNumber(AUTO_SELL_PRICE_PER_BANANA * getPipModifiers().autoSellPriceMultiplier);
 }
 
 export function pickBananaClick() {
@@ -2259,7 +2632,7 @@ export function getOrchardPickRatePerSecond() {
   }
   const owned = Math.max(0, Math.floor(Number(gameState.orchardsOwned) || 0));
   const per = Math.max(0, Number(gameState.orchardPickRatePerSecondPerOrchard) || DEFAULT_STATE.orchardPickRatePerSecondPerOrchard);
-  return stabilizeNumber(owned * per);
+  return stabilizeNumber(owned * per * getPipModifiers().orchardPickMultiplier);
 }
 
 export function buyOrchard() {

@@ -4,6 +4,7 @@ export function renderHudBar() {
       <div class="hud-row">
         <h1>Jungle Game</h1>
         <div class="hud-actions">
+          <button id="openLeaderboardBtn" class="ghost-btn" type="button" title="Open global leaderboard">Leaderboard</button>
           <button id="debugToggleBtn" class="ghost-btn" type="button" title="Toggle performance debug panel">Debug</button>
           <button id="resetProgressBtn" class="ghost-btn" type="button" title="Reset all game progress in the active save slot">Reset Progress</button>
           <button id="openSettingsBtn" class="ghost-btn" type="button" title="Open game settings">Settings</button>

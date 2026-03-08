@@ -1,5 +1,5 @@
 JUNGLE GAME SCALING + PROGRESSION REFERENCE
-Source: renderer code (schemaVersion 6)
+Source: renderer code (schemaVersion 8)
 
 1) CORE ECONOMY FORMULAS
 
@@ -381,12 +381,14 @@ Typical perk magnitudes are +1% to +5% multiplicative boosts.
 
 16) SAVE + MIGRATION NOTES
 
-- current schemaVersion = 6
+- current schemaVersion = 8
 - migration notes in code:
   - v3: worker base stat stabilization
   - v4: tree harvest state + harvest upgrades
   - v5: orchard fields
   - v6: removed tree quality/health system
+  - v7: auto-export fields
+  - v8: PIP shop fields (rank map + spent totals)
 
 17) IMPORTANT EXPORT LIMIT INTERACTION
 
@@ -447,4 +449,26 @@ The engine now applies these additional scaling rules:
   Weird Science:
   row complete: click x1.14 each, production x1.06 each
   full category complete: click x1.25
+
+19) PIP SHOP (PERMANENT PRESTIGE SPENDING)
+
+State fields:
+- purchasedPipUpgrades: object map id -> rank
+- pipSpentTotal: running total PIP spent
+- pipRespecCount: reserved for respec flow
+
+Purchase/cost rules:
+- Each node has maxRank, baseCostPip, and costGrowth.
+- nextCost = ceil(baseCostPip * (costGrowth ^ currentRank)).
+- purchase validates unlock condition, rank cap, and available PIP.
+- Prestige reset keeps purchasedPipUpgrades intact.
+
+Modifier integration (single-pass to avoid double stacking):
+- getPipModifiers() aggregates all purchased ranks.
+- recomputeDerivedStats() applies PIP modifiers once into:
+  production multiplier, click multiplier, export price multiplier, export cooldown multiplier.
+- Tree harvest modifiers receive PIP effects for:
+  spawn interval, max bananas, click harvest yield, golden chance/multiplier, shake cooldown.
+- Additional systems consume PIP modifiers:
+  shipping lane capacity, auto-sell price, orchard pick rate, and research discount multiplier.
 

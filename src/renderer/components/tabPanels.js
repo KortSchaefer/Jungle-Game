@@ -2,11 +2,12 @@ export function renderTabPanels() {
   return `
     <section class="main-column">
       <nav class="top-nav" aria-label="Game sections">
-        <button id="toggleUpgradesBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="upgradesPanel">Upgrades</button>
+        <button id="toggleUpgradesBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="upgradesView">Upgrades</button>
       </nav>
 
-      <div class="core-panels">
-        <section id="treesPanel" class="tab-panel core-panel is-active" aria-label="Trees and farms">
+      <section id="mainView" class="main-view" aria-hidden="false">
+        <div class="core-panels">
+          <section id="treesPanel" class="tab-panel core-panel is-active" aria-label="Trees and farms">
           <div class="ui-card">
             <h3>Banana Tree Harvest</h3>
             <div id="treeHarvestRoot" class="tree-harvest-root">
@@ -109,56 +110,67 @@ export function renderTabPanels() {
             <p id="workersPerSecText">Workers/sec: 0</p>
             <p id="bonusMultipliersText">Bonuses: Production 1.00x, Export 1.00x</p>
           </div>
-        </section>
+          </section>
 
-        <section id="exportPanel" class="tab-panel core-panel is-active" aria-label="Exporting">
-          <div class="ui-card">
-            <h3>Export Automation</h3>
-            <p id="autoExportStatusText">Auto-Export locked.</p>
-            <button id="autoExportBtn" type="button" title="Unlocks automatic max-size shipments when buyers are ready">
-              Unlock Auto-Export
-            </button>
-          </div>
-
-          <div class="ui-card">
-            <h3>Shipping Lane</h3>
-            <label class="toggle-row" for="shippingLaneSelect">
-              <span>Lane</span>
-              <select id="shippingLaneSelect"></select>
-            </label>
-            <p id="laneInfoText">Lane bonus and capacity will appear here.</p>
-          </div>
-
-          <div class="ui-card">
-            <h3>Sell Instantly At Market</h3>
-            <p id="marketPriceText">Market price: $0 per banana</p>
-            <div class="input-row">
-              <input id="marketSellAmount" type="number" min="1" step="1" value="10" />
-              <button id="sellBtn" type="button" title="Quick fallback sale at base market price">Sell Now</button>
+          <section id="exportPanel" class="tab-panel core-panel is-active" aria-label="Exporting">
+            <div class="ui-card">
+              <h3>Export Automation</h3>
+              <p id="autoExportStatusText">Auto-Export locked.</p>
+              <button id="autoExportBtn" type="button" title="Unlocks automatic max-size shipments when buyers are ready">
+                Unlock Auto-Export
+              </button>
             </div>
-          </div>
 
-          <div class="ui-card">
-            <h3>Buyers</h3>
-            <div id="buyersList" class="buyers-list"></div>
-          </div>
+            <div class="ui-card">
+              <h3>Shipping Lane</h3>
+              <label class="toggle-row" for="shippingLaneSelect">
+                <span>Lane</span>
+                <select id="shippingLaneSelect"></select>
+              </label>
+              <p id="laneInfoText">Lane bonus and capacity will appear here.</p>
+            </div>
 
-          <div class="ui-card">
-            <h3>Contracts</h3>
-            <div id="contractsList" class="buyers-list"></div>
-          </div>
-        </section>
-      </div>
+            <div class="ui-card">
+              <h3>Sell Instantly At Market</h3>
+              <p id="marketPriceText">Market price: $0 per banana</p>
+              <div class="input-row">
+                <input id="marketSellAmount" type="number" min="1" step="1" value="10" />
+                <button id="sellBtn" type="button" title="Quick fallback sale at base market price">Sell Now</button>
+              </div>
+            </div>
 
-      <section id="upgradesPanel" class="tab-panel upgrades-panel is-hidden">
+            <div class="ui-card">
+              <h3>Buyers</h3>
+              <div id="buyersList" class="buyers-list"></div>
+            </div>
+
+            <div class="ui-card">
+              <h3>Contracts</h3>
+              <div id="contractsList" class="buyers-list"></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="upgradesView" class="tab-panel upgrades-panel is-hidden" aria-hidden="true">
+        <div class="upgrades-head">
+          <button id="backToMainBtn" class="ghost-btn" type="button" aria-controls="mainView">Back To Main</button>
+        </div>
         <div class="ui-card">
           <h3>Primate Intelligence Prestige</h3>
           <p id="pipText">PIP: 0</p>
+          <p id="pipSpentText">PIP Spent: 0</p>
           <p id="prestigeCountText">Prestige Resets: 0</p>
           <p id="prestigeBonusText">Permanent bonus: +0% production, +0% export price, +0% click yield</p>
           <p id="prestigeUnlockText">Unlock condition: Reach Quantum Banana Reactor tier or 1.00M total bananas earned.</p>
           <p id="prestigeGainText">Reset gain: +0 PIP</p>
           <button id="prestigeBtn" type="button" title="Reset run progress for permanent PIP bonuses">Reset for PIP</button>
+        </div>
+
+        <div class="ui-card">
+          <h3>PIP Shop</h3>
+          <p id="pipShopSummaryText">Spend PIP on permanent cross-run upgrades.</p>
+          <div id="pipUpgradesList" class="buyers-list"></div>
         </div>
 
         <div class="ui-card">

@@ -32,6 +32,23 @@ export function renderSettingsModal() {
         </label>
 
         <div class="ui-card">
+          <h4>Player Identity</h4>
+          <p id="playerIdText">Player ID: -</p>
+          <label class="toggle-row" for="displayNameInput">
+            <span>Display Name</span>
+            <input id="displayNameInput" type="text" minlength="3" maxlength="16" placeholder="Banana CEO" />
+          </label>
+          <label class="toggle-row" for="avatarEmojiInput">
+            <span>Avatar Emoji</span>
+            <input id="avatarEmojiInput" type="text" maxlength="2" placeholder="🐵" />
+          </label>
+          <div class="input-row">
+            <button id="saveIdentityBtn" type="button">Save Identity</button>
+          </div>
+          <p id="displayNameCooldownText">Display name can be changed once per minute.</p>
+        </div>
+
+        <div class="ui-card">
           <h4>Save Management</h4>
           <label class="toggle-row" for="saveSlotSelect">
             <span>Save Slot</span>

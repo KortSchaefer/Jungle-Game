@@ -20,7 +20,9 @@ import {
   getLiveEventStatus,
   getMarketPricePerBanana,
   getOrchardStatus,
+  getPipUpgradeStatus,
   getNextTreeTier,
+  getPipModifiers,
   getPrestigeBonuses,
   getPrestigeGainPreview,
   getProductionBreakdown,
@@ -41,6 +43,7 @@ import {
   isUpgradeUnlocked,
   prestigeReset,
   purchaseTreeHarvestUpgrade,
+  purchasePipUpgrade,
   purchaseUpgrade,
   resetAllProgress,
   shakeTreeHarvest,
@@ -58,11 +61,13 @@ import {
 import { formatGameNumber } from "./numbers.js";
 import { themedUpgradeNames } from "./researchTree.js";
 import { treeTextures } from "./textureAssets.js";
-import { loadUISettings, setUISettings } from "./settings.js";
+import { canChangeDisplayName, completeRegistration, loadUISettings, setUISettings, updateDisplayName } from "./settings.js";
 import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
 import { TreeHarvestView } from "./treeHarvestView.js";
 import { renderCeoPanel } from "./components/ceoPanel.js";
 import { renderHudBar } from "./components/hudBar.js";
+import { renderLeaderboardModal } from "./components/leaderboardModal.js";
+import { renderRegistrationModal } from "./components/registrationModal.js";
 import { renderSettingsModal } from "./components/settingsModal.js";
 import { renderTabPanels } from "./components/tabPanels.js";
 
@@ -92,6 +97,16 @@ function formatCooldown(seconds) {
   }
 
   return `${seconds}s remaining`;
+}
+
+function formatRemainingMs(ms) {
+  const total = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  if (mins <= 0) {
+    return `${secs}s`;
+  }
+  return `${mins}m ${secs}s`;
 }
 
 function clampShipment(value, min, max) {
@@ -188,6 +203,8 @@ export function mountUI(container) {
         ${renderTabPanels()}
       </div>
       ${renderSettingsModal()}
+      ${renderLeaderboardModal()}
+      ${renderRegistrationModal()}
     </main>
   `;
 
@@ -202,12 +219,18 @@ export function mountUI(container) {
     eventNameText: container.querySelector("#eventNameText"),
     eventDetailText: container.querySelector("#eventDetailText"),
     debugToggleBtn: container.querySelector("#debugToggleBtn"),
+    openLeaderboardBtn: container.querySelector("#openLeaderboardBtn"),
     resetProgressBtn: container.querySelector("#resetProgressBtn"),
     debugPanel: container.querySelector("#debugPanel"),
     debugTickText: container.querySelector("#debugTickText"),
     debugRenderText: container.querySelector("#debugRenderText"),
     debugFpsText: container.querySelector("#debugFpsText"),
     companyNameInput: container.querySelector("#companyNameInput"),
+    playerIdText: container.querySelector("#playerIdText"),
+    displayNameInput: container.querySelector("#displayNameInput"),
+    avatarEmojiInput: container.querySelector("#avatarEmojiInput"),
+    saveIdentityBtn: container.querySelector("#saveIdentityBtn"),
+    displayNameCooldownText: container.querySelector("#displayNameCooldownText"),
     ceoLevelText: container.querySelector("#ceoLevelText"),
     ceoProgressFill: container.querySelector("#ceoProgressFill"),
     ceoProgressText: container.querySelector("#ceoProgressText"),
@@ -270,6 +293,9 @@ export function mountUI(container) {
     contractsList: container.querySelector("#contractsList"),
     marketSellAmountInput: container.querySelector("#marketSellAmount"),
     pipText: container.querySelector("#pipText"),
+    pipSpentText: container.querySelector("#pipSpentText"),
+    pipShopSummaryText: container.querySelector("#pipShopSummaryText"),
+    pipUpgradesList: container.querySelector("#pipUpgradesList"),
     prestigeCountText: container.querySelector("#prestigeCountText"),
     prestigeBonusText: container.querySelector("#prestigeBonusText"),
     prestigeUnlockText: container.querySelector("#prestigeUnlockText"),
@@ -301,6 +327,17 @@ export function mountUI(container) {
     openSettingsBtn: container.querySelector("#openSettingsBtn"),
     closeSettingsBtn: container.querySelector("#closeSettingsBtn"),
     settingsModal: container.querySelector("#settingsModal"),
+    leaderboardModal: container.querySelector("#leaderboardModal"),
+    closeLeaderboardBtn: container.querySelector("#closeLeaderboardBtn"),
+    refreshLeaderboardBtn: container.querySelector("#refreshLeaderboardBtn"),
+    leaderboardStatusText: container.querySelector("#leaderboardStatusText"),
+    leaderboardUpdatedText: container.querySelector("#leaderboardUpdatedText"),
+    leaderboardList: container.querySelector("#leaderboardList"),
+    registrationModal: container.querySelector("#registrationModal"),
+    registrationDisplayNameInput: container.querySelector("#registrationDisplayNameInput"),
+    registrationAvatarEmojiInput: container.querySelector("#registrationAvatarEmojiInput"),
+    registrationErrorText: container.querySelector("#registrationErrorText"),
+    confirmRegistrationBtn: container.querySelector("#confirmRegistrationBtn"),
     autosaveToggle: container.querySelector("#autosaveToggle"),
     numberFormatSelect: container.querySelector("#numberFormatSelect"),
     soundToggle: container.querySelector("#soundToggle"),
@@ -315,8 +352,10 @@ export function mountUI(container) {
     importSaveInput: container.querySelector("#importSaveInput"),
     confirmImportBtn: container.querySelector("#confirmImportBtn"),
     cancelImportBtn: container.querySelector("#cancelImportBtn"),
+    mainView: container.querySelector("#mainView"),
     toggleUpgradesBtn: container.querySelector("#toggleUpgradesBtn"),
-    upgradesPanel: container.querySelector("#upgradesPanel"),
+    upgradesView: container.querySelector("#upgradesView"),
+    backToMainBtn: container.querySelector("#backToMainBtn"),
   };
 
   let numberFormatMode = settings.numberFormat;
@@ -342,12 +381,138 @@ export function mountUI(container) {
   }
   elements.saveSlotSelect.value = String(settings.activeSaveSlot || 1);
 
-  if (elements.toggleUpgradesBtn && elements.upgradesPanel) {
-    elements.toggleUpgradesBtn.addEventListener("click", () => {
-      const isHidden = elements.upgradesPanel.classList.toggle("is-hidden");
-      const isOpen = !isHidden;
-      elements.toggleUpgradesBtn.textContent = isOpen ? "Hide Upgrades" : "Upgrades";
+  const setUpgradesViewOpen = (isOpen, persist = true) => {
+    if (elements.mainView) {
+      elements.mainView.classList.toggle("is-hidden", isOpen);
+      elements.mainView.setAttribute("aria-hidden", String(isOpen));
+    }
+    if (elements.upgradesView) {
+      elements.upgradesView.classList.toggle("is-hidden", !isOpen);
+      elements.upgradesView.setAttribute("aria-hidden", String(!isOpen));
+    }
+    if (elements.toggleUpgradesBtn) {
+      elements.toggleUpgradesBtn.textContent = isOpen ? "Back To Main" : "Upgrades";
       elements.toggleUpgradesBtn.setAttribute("aria-expanded", String(isOpen));
+      elements.toggleUpgradesBtn.setAttribute("aria-controls", "upgradesView");
+    }
+    if (persist) {
+      const next = setUISettings({ upgradesViewOpen: isOpen });
+      settings.upgradesViewOpen = next.upgradesViewOpen;
+    } else {
+      settings.upgradesViewOpen = isOpen;
+    }
+  };
+
+  const isValidRegistrationName = (rawName) => {
+    const trimmed = String(rawName || "").replace(/\s+/g, " ").trim();
+    return trimmed.length >= 3 && trimmed.length <= 16;
+  };
+
+  const syncIdentityUi = (identity = settings) => {
+    if (elements.playerIdText) {
+      setTextIfChanged(elements.playerIdText, `Player ID: ${identity.playerId || "-"}`);
+    }
+    if (elements.displayNameInput) {
+      setValueIfChanged(elements.displayNameInput, identity.displayName || "Banana CEO");
+    }
+    if (elements.avatarEmojiInput) {
+      setValueIfChanged(elements.avatarEmojiInput, identity.avatarEmoji || "🐵");
+    }
+    if (elements.registrationDisplayNameInput) {
+      setValueIfChanged(elements.registrationDisplayNameInput, identity.displayName || "Banana CEO");
+    }
+    if (elements.registrationAvatarEmojiInput) {
+      setValueIfChanged(elements.registrationAvatarEmojiInput, identity.avatarEmoji || "🐵");
+    }
+    if (elements.displayNameCooldownText) {
+      const lock = canChangeDisplayName(identity);
+      setTextIfChanged(
+        elements.displayNameCooldownText,
+        lock.canChange
+          ? "Display name can be changed once per minute."
+          : `Display name can be changed again in ${formatRemainingMs(lock.remainingMs)}.`
+      );
+    }
+  };
+
+  const mockLeaderboardProvider = async () => {
+    const now = Date.now();
+    await new Promise((resolve) => window.setTimeout(resolve, 220));
+    if (Math.random() < 0.08) {
+      throw new Error("Leaderboard service unavailable.");
+    }
+
+    const sample = [
+      { playerId: "mock-1", displayName: "Ape Capital", prestigeCount: 18, pip: 812 },
+      { playerId: "mock-2", displayName: "Banana Baron", prestigeCount: 15, pip: 640 },
+      { playerId: "mock-3", displayName: "CitrusChimp", prestigeCount: 12, pip: 501 },
+      { playerId: "mock-4", displayName: "Tree Tycoon", prestigeCount: 10, pip: 390 },
+      { playerId: "mock-5", displayName: "Jungle Exec", prestigeCount: 8, pip: 280 },
+    ];
+    sample.push({
+      playerId: settings.playerId,
+      displayName: settings.displayName,
+      prestigeCount: Math.max(0, Number(gameState.prestigeCount) || 0),
+      pip: Math.max(0, Number(gameState.pip) || 0),
+      local: true,
+    });
+
+    const sorted = sample.sort((a, b) => (b.pip - a.pip) || (b.prestigeCount - a.prestigeCount));
+    const ranked = sorted.map((entry, index) => ({ ...entry, rank: index + 1 }));
+    return {
+      updatedAt: now,
+      entries: ranked.slice(0, 12),
+    };
+  };
+
+  let leaderboardLoading = false;
+  const refreshLeaderboard = async () => {
+    if (leaderboardLoading) {
+      return;
+    }
+    leaderboardLoading = true;
+    setTextIfChanged(elements.leaderboardStatusText, "Loading leaderboard...");
+    setHtmlIfChanged(elements.leaderboardList, "");
+    try {
+      const payload = await mockLeaderboardProvider();
+      setTextIfChanged(elements.leaderboardUpdatedText, `Last updated: ${new Date(payload.updatedAt).toLocaleString()}`);
+      setTextIfChanged(elements.leaderboardStatusText, payload.entries.length ? "" : "No entries yet.");
+      setHtmlIfChanged(
+        elements.leaderboardList,
+        payload.entries.length
+          ? payload.entries
+              .map((entry) => {
+                const isLocal = entry.playerId === settings.playerId || entry.local;
+                return `<div class="buyer-card ${isLocal ? "is-local-entry" : ""}">
+              <p class="buyer-name">#${entry.rank} ${entry.displayName}${isLocal ? " (You)" : ""}</p>
+              <p>Prestige: ${entry.prestigeCount}</p>
+              <p>PIP: ${entry.pip}</p>
+            </div>`;
+              })
+              .join("")
+          : "<p>No leaderboard entries available.</p>"
+      );
+    } catch (error) {
+      setTextIfChanged(elements.leaderboardStatusText, "Error loading leaderboard. Try refresh.");
+      setHtmlIfChanged(elements.leaderboardList, "");
+      console.error("[Leaderboard] Failed to load mock leaderboard.", error);
+    } finally {
+      leaderboardLoading = false;
+    }
+  };
+
+  setUpgradesViewOpen(Boolean(settings.upgradesViewOpen), false);
+
+  if (elements.toggleUpgradesBtn && elements.upgradesView) {
+    elements.toggleUpgradesBtn.addEventListener("click", () => {
+      const currentlyOpen = !elements.upgradesView.classList.contains("is-hidden");
+      setUpgradesViewOpen(!currentlyOpen, true);
+    });
+  }
+
+  if (elements.backToMainBtn) {
+    elements.backToMainBtn.addEventListener("click", () => {
+      setUpgradesViewOpen(false, true);
     });
   }
 
@@ -360,11 +525,27 @@ export function mountUI(container) {
   }
 
   elements.openSettingsBtn.addEventListener("click", openSettingsModal);
+  elements.openLeaderboardBtn.addEventListener("click", async () => {
+    elements.leaderboardModal.classList.remove("is-hidden");
+    await refreshLeaderboard();
+  });
   elements.closeSettingsBtn.addEventListener("click", closeSettingsModal);
+  elements.closeLeaderboardBtn.addEventListener("click", () => {
+    elements.leaderboardModal.classList.add("is-hidden");
+  });
+  elements.refreshLeaderboardBtn.addEventListener("click", async () => {
+    await refreshLeaderboard();
+  });
   elements.settingsModal.addEventListener("click", (event) => {
     const target = event.target;
     if (target instanceof HTMLElement && target.dataset.closeSettings === "true") {
       closeSettingsModal();
+    }
+  });
+  elements.leaderboardModal.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement && target.dataset.closeLeaderboard === "true") {
+      elements.leaderboardModal.classList.add("is-hidden");
     }
   });
 
@@ -372,6 +553,47 @@ export function mountUI(container) {
     const companyName = elements.companyNameInput.value.trim();
     const next = setUISettings({ companyName });
     elements.companyNameInput.value = next.companyName;
+  });
+  elements.saveIdentityBtn.addEventListener("click", () => {
+    const nextAvatar = String(elements.avatarEmojiInput.value || "").trim().slice(0, 2) || "🐵";
+    const desiredName = elements.displayNameInput.value;
+    const nameChanged = desiredName.trim() !== String(settings.displayName || "").trim();
+
+    if (nameChanged) {
+      const result = updateDisplayName(desiredName);
+      if (!result.success && result.reason === "cooldown") {
+        setTextIfChanged(
+          elements.displayNameCooldownText,
+          `Display name can be changed again in ${formatRemainingMs(result.remainingMs)}.`
+        );
+        return;
+      }
+      Object.assign(settings, result.settings);
+    }
+
+    const next = setUISettings({ avatarEmoji: nextAvatar });
+    Object.assign(settings, next);
+    syncIdentityUi(settings);
+  });
+
+  if (!settings.profileCompleted) {
+    elements.registrationModal.classList.remove("is-hidden");
+  }
+  elements.confirmRegistrationBtn.addEventListener("click", () => {
+    const rawDisplayName = elements.registrationDisplayNameInput.value;
+    if (!isValidRegistrationName(rawDisplayName)) {
+      elements.registrationErrorText.classList.remove("is-hidden");
+      setTextIfChanged(elements.registrationErrorText, "Display name must be 3 to 16 characters.");
+      return;
+    }
+    const next = completeRegistration({
+      displayName: rawDisplayName,
+      avatarEmoji: elements.registrationAvatarEmojiInput.value,
+    });
+    Object.assign(settings, next);
+    elements.registrationErrorText.classList.add("is-hidden");
+    elements.registrationModal.classList.add("is-hidden");
+    syncIdentityUi(settings);
   });
 
   elements.autosaveToggle.addEventListener("change", () => {
@@ -487,6 +709,7 @@ export function mountUI(container) {
   });
 
   refreshSaveSummary();
+  syncIdentityUi(settings);
 
   setHtmlIfChanged(
     elements.upgradeNameCatalog,
@@ -567,6 +790,23 @@ export function mountUI(container) {
     }
   });
 
+  if (elements.pipUpgradesList) {
+    elements.pipUpgradesList.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const button = target.closest("button[data-pip-upgrade-id]");
+      if (!button) {
+        return;
+      }
+      const upgradeId = button.dataset.pipUpgradeId;
+      if (upgradeId) {
+        purchasePipUpgrade(upgradeId);
+      }
+    });
+  }
+
   const buyersList = container.querySelector("#buyersList");
   const buyerElements = new Map();
 
@@ -577,16 +817,69 @@ export function mountUI(container) {
     buyersByTier.get(tier).push(buyer);
   });
 
+  const tierSectionElements = new Map();
+  const getTierExpandedState = (tier) => {
+    const source = settings.buyerTierExpanded && typeof settings.buyerTierExpanded === "object" ? settings.buyerTierExpanded : {};
+    if (typeof source[tier] === "boolean") {
+      return source[tier];
+    }
+    return tier === "Local";
+  };
+
+  const setTierExpandedState = (tier, expanded, persist = true) => {
+    const current = settings.buyerTierExpanded && typeof settings.buyerTierExpanded === "object"
+      ? settings.buyerTierExpanded
+      : {};
+    const nextExpanded = {
+      ...current,
+      [tier]: Boolean(expanded),
+    };
+
+    settings.buyerTierExpanded = nextExpanded;
+    if (persist) {
+      setUISettings({ buyerTierExpanded: nextExpanded });
+    }
+
+    const refs = tierSectionElements.get(tier);
+    if (!refs) {
+      return;
+    }
+    refs.toggleBtn.setAttribute("aria-expanded", String(Boolean(expanded)));
+    refs.panel.classList.toggle("is-hidden", !expanded);
+    refs.panel.setAttribute("aria-hidden", String(!expanded));
+  };
+
   buyerTierOrder.forEach((tier) => {
-    const heading = document.createElement("div");
-    heading.className = "buyer-card";
-    heading.innerHTML = `<p class="buyer-name">${tier} Buyers</p>`;
-    buyersList.appendChild(heading);
+    const section = document.createElement("section");
+    section.className = "buyer-tier-group";
+
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.className = "buyer-tier-toggle";
+    toggleBtn.setAttribute("aria-expanded", "false");
+    toggleBtn.setAttribute("aria-controls", `buyer-tier-${tier.toLowerCase()}-panel`);
+    toggleBtn.textContent = `${tier} Buyers`;
+
+    const panel = document.createElement("div");
+    panel.className = "buyers-list buyer-tier-panel";
+    panel.id = `buyer-tier-${tier.toLowerCase()}-panel`;
+
+    section.appendChild(toggleBtn);
+    section.appendChild(panel);
+    buyersList.appendChild(section);
+
+    tierSectionElements.set(tier, { section, toggleBtn, panel });
+
+    toggleBtn.addEventListener("click", () => {
+      const currentlyExpanded = toggleBtn.getAttribute("aria-expanded") === "true";
+      setTierExpandedState(tier, !currentlyExpanded, true);
+    });
+
     const tierBuyers = buyersByTier.get(tier) || [];
     tierBuyers.forEach((buyer) => {
-    const card = document.createElement("div");
-    card.className = "buyer-card";
-    card.innerHTML = `
+      const card = document.createElement("div");
+      card.className = "buyer-card";
+      card.innerHTML = `
       <p class="buyer-name">${buyer.logoEmoji || "M"} ${buyer.name}</p>
       <p>${buyer.flavorText || "No profile on file."}</p>
       <p class="buyer-status" id="status-${buyer.id}">Status: Locked</p>
@@ -602,7 +895,7 @@ export function mountUI(container) {
       </div>
     `;
 
-      buyersList.appendChild(card);
+      panel.appendChild(card);
 
       const slider = card.querySelector(`#slider-${buyer.id}`);
       const input = card.querySelector(`#input-${buyer.id}`);
@@ -651,6 +944,8 @@ export function mountUI(container) {
         requirement: buyer.unlockRequirement,
       });
     });
+
+    setTierExpandedState(tier, getTierExpandedState(tier), false);
   });
 
   const researchNodes = getResearchTreeNodes();
@@ -922,7 +1217,15 @@ export function mountUI(container) {
     const prestigeUnlocked = isPrestigeUnlocked();
     const prestigeGain = getPrestigeGainPreview();
     const prestigeBonuses = getPrestigeBonuses();
+    const pipUpgradeStatus = getPipUpgradeStatus();
+    const pipModifiers = getPipModifiers();
+    const boughtPipRanks = pipUpgradeStatus.reduce((sum, item) => sum + item.rank, 0);
     setTextIfChanged(elements.pipText, `PIP: ${fmt(state.pip)}`);
+    setTextIfChanged(elements.pipSpentText, `PIP Spent: ${fmt(state.pipSpentTotal)}`);
+    setTextIfChanged(
+      elements.pipShopSummaryText,
+      `Ranks purchased: ${fmt(boughtPipRanks)} | Total spent: ${fmt(state.pipSpentTotal)} | Permanent mods: Prod ${fmt(pipModifiers.productionMultiplier)}x, Click ${fmt(pipModifiers.clickMultiplier)}x, Export ${fmt(pipModifiers.exportPriceMultiplier)}x`
+    );
     setTextIfChanged(elements.prestigeCountText, `Prestige Resets: ${fmt(state.prestigeCount)}`);
     setTextIfChanged(elements.prestigeBonusText, `Permanent bonus: +${fmt((prestigeBonuses.productionMultiplier - 1) * 100)}% production, +${fmt((prestigeBonuses.exportPriceMultiplier - 1) * 100)}% export price, +${fmt((prestigeBonuses.clickMultiplier - 1) * 100)}% click yield`);
     setTextIfChanged(
@@ -933,6 +1236,32 @@ export function mountUI(container) {
     );
     setTextIfChanged(elements.prestigeGainText, `Reset gain: +${fmt(prestigeGain)} PIP`);
     setDisabledIfChanged(elements.prestigeBtn, !prestigeUnlocked || prestigeGain <= 0);
+    setHtmlIfChanged(
+      elements.pipUpgradesList,
+      pipUpgradeStatus
+        .map((upgrade) => {
+          const stateLabel = upgrade.maxed
+            ? "Maxed"
+            : upgrade.unlocked
+              ? `Rank ${fmt(upgrade.rank)} / ${fmt(upgrade.maxRank)}`
+              : "Locked";
+          const costLabel = upgrade.maxed ? "Max Rank" : `${fmt(upgrade.nextCost)} PIP`;
+          const disabled = upgrade.maxed || !upgrade.unlocked || !upgrade.canAfford;
+          const requirementText = upgrade.unlocked
+            ? ""
+            : `<p>Unlock: ${formatRequirement(upgrade.unlockCondition, fmt)}</p>`;
+          return `<div class="upgrade-card">
+          <p class="buyer-name">${upgrade.category}: ${upgrade.name}</p>
+          <p>${upgrade.description}</p>
+          ${requirementText}
+          <p>Status: ${stateLabel}</p>
+          <button type="button" data-pip-upgrade-id="${upgrade.id}" ${disabled ? "disabled" : ""}>
+            ${upgrade.maxed ? "Maxed" : `Buy (${costLabel})`}
+          </button>
+        </div>`;
+        })
+        .join("")
+    );
 
     const ceo = getCeoLevelProgress(state.totalBananasEarned);
     setTextIfChanged(elements.ceoLevelText, `Level ${ceo.level}`);

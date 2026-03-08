@@ -1,18 +1,81 @@
 const SETTINGS_KEY = "jungleGameUiSettings";
+const UI_SETTINGS_SCHEMA_VERSION = 2;
+const DISPLAY_NAME_MIN_LENGTH = 3;
+const DISPLAY_NAME_MAX_LENGTH = 16;
+const DISPLAY_NAME_CHANGE_COOLDOWN_MS = 60 * 1000;
+const DEFAULT_DISPLAY_NAME = "Banana CEO";
+const BUYER_TIER_ORDER = Object.freeze(["Local", "Corporate", "Global", "Interstellar", "Cosmic"]);
 
 const DEFAULT_SETTINGS = Object.freeze({
+  schemaVersion: UI_SETTINGS_SCHEMA_VERSION,
   autosaveEnabled: true,
   numberFormat: "short",
   soundEnabled: false,
   treeDebugEnabled: false,
   companyName: "Monkey Banana Holdings",
   activeSaveSlot: 1,
+  playerId: "",
+  displayName: DEFAULT_DISPLAY_NAME,
+  avatarEmoji: "🐵",
+  createdAt: 0,
+  profileCompleted: false,
+  lastDisplayNameChangeAt: 0,
+  upgradesViewOpen: false,
+  buyerTierExpanded: {
+    Local: true,
+    Corporate: false,
+    Global: false,
+    Interstellar: false,
+    Cosmic: false,
+  },
 });
 
 let settingsCache = null;
+const bannedNameTokens = ["admin", "moderator", "owner", "support"];
 
-function sanitizeSettings(raw) {
+function generatePlayerId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  const timePart = Date.now().toString(36);
+  return `jg-${timePart}-${randomPart}`;
+}
+
+function collapseWhitespace(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(text) {
+  return String(text || "").replace(/[<>&"'`]/g, "");
+}
+
+export function sanitizeDisplayName(rawName) {
+  const collapsed = collapseWhitespace(rawName);
+  const stripped = escapeHtml(collapsed);
+  const truncated = stripped.slice(0, DISPLAY_NAME_MAX_LENGTH);
+  if (truncated.length < DISPLAY_NAME_MIN_LENGTH) {
+    return DEFAULT_DISPLAY_NAME;
+  }
+  const lower = truncated.toLowerCase();
+  if (bannedNameTokens.some((token) => lower.includes(token))) {
+    return DEFAULT_DISPLAY_NAME;
+  }
+  return truncated;
+}
+
+function sanitizeAvatarEmoji(rawEmoji) {
+  const value = String(rawEmoji || "").trim();
+  if (!value) {
+    return "🐵";
+  }
+  return value.slice(0, 2);
+}
+
+function sanitizeSettings(raw, options = {}) {
+  const hasExistingStoredSettings = Boolean(options.hasExistingStoredSettings);
   const next = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  next.schemaVersion = UI_SETTINGS_SCHEMA_VERSION;
   next.autosaveEnabled = Boolean(next.autosaveEnabled);
   next.numberFormat = next.numberFormat === "scientific" ? "scientific" : "short";
   next.soundEnabled = Boolean(next.soundEnabled);
@@ -21,6 +84,27 @@ function sanitizeSettings(raw) {
   next.activeSaveSlot = [1, 2, 3].includes(slotId) ? slotId : 1;
   const companyName = String(next.companyName || DEFAULT_SETTINGS.companyName).trim();
   next.companyName = companyName || DEFAULT_SETTINGS.companyName;
+  next.playerId = String(next.playerId || "").trim() || generatePlayerId();
+  next.createdAt = Number(next.createdAt) > 0 ? Number(next.createdAt) : Date.now();
+  next.displayName = sanitizeDisplayName(next.displayName);
+  next.avatarEmoji = sanitizeAvatarEmoji(next.avatarEmoji);
+  next.lastDisplayNameChangeAt = Number(next.lastDisplayNameChangeAt) > 0 ? Number(next.lastDisplayNameChangeAt) : 0;
+  next.upgradesViewOpen = Boolean(next.upgradesViewOpen);
+  const expandedSource = next.buyerTierExpanded && typeof next.buyerTierExpanded === "object" ? next.buyerTierExpanded : {};
+  next.buyerTierExpanded = BUYER_TIER_ORDER.reduce((acc, tier) => {
+    const fallback = DEFAULT_SETTINGS.buyerTierExpanded[tier];
+    acc[tier] = typeof expandedSource[tier] === "boolean" ? expandedSource[tier] : fallback;
+    return acc;
+  }, {});
+
+  // Existing installs are auto-migrated and do not get blocked by registration.
+  // New installs (no stored settings) are required to complete registration once.
+  if (typeof next.profileCompleted !== "boolean") {
+    next.profileCompleted = hasExistingStoredSettings;
+  } else {
+    next.profileCompleted = Boolean(next.profileCompleted);
+  }
+
   return next;
 }
 
@@ -31,7 +115,9 @@ export function loadUISettings() {
 
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    settingsCache = sanitizeSettings(raw ? JSON.parse(raw) : null);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const hasExistingStoredSettings = Boolean(raw);
+    settingsCache = sanitizeSettings(parsed, { hasExistingStoredSettings });
   } catch (_error) {
     settingsCache = { ...DEFAULT_SETTINGS };
   }
@@ -40,7 +126,7 @@ export function loadUISettings() {
 }
 
 export function saveUISettings(settings) {
-  settingsCache = sanitizeSettings(settings);
+  settingsCache = sanitizeSettings(settings, { hasExistingStoredSettings: true });
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsCache));
   return settingsCache;
 }
@@ -59,4 +145,51 @@ export function onUISettingsChange(listener) {
 
   window.addEventListener("jungle-ui-settings-changed", handler);
   return () => window.removeEventListener("jungle-ui-settings-changed", handler);
+}
+
+export function canChangeDisplayName(settings = loadUISettings(), now = Date.now()) {
+  const lastChanged = Number(settings.lastDisplayNameChangeAt) || 0;
+  const remainingMs = Math.max(0, lastChanged + DISPLAY_NAME_CHANGE_COOLDOWN_MS - now);
+  return {
+    canChange: remainingMs <= 0,
+    remainingMs,
+    cooldownMs: DISPLAY_NAME_CHANGE_COOLDOWN_MS,
+  };
+}
+
+export function completeRegistration({ displayName, avatarEmoji } = {}) {
+  const current = loadUISettings();
+  const sanitizedDisplayName = sanitizeDisplayName(displayName || current.displayName);
+  const sanitizedEmoji = sanitizeAvatarEmoji(avatarEmoji || current.avatarEmoji);
+  return setUISettings({
+    playerId: current.playerId || generatePlayerId(),
+    displayName: sanitizedDisplayName,
+    avatarEmoji: sanitizedEmoji,
+    createdAt: current.createdAt || Date.now(),
+    profileCompleted: true,
+    lastDisplayNameChangeAt: Date.now(),
+  });
+}
+
+export function updateDisplayName(displayName) {
+  const current = loadUISettings();
+  const lock = canChangeDisplayName(current);
+  if (!lock.canChange) {
+    return {
+      success: false,
+      reason: "cooldown",
+      remainingMs: lock.remainingMs,
+      settings: current,
+    };
+  }
+
+  const next = setUISettings({
+    displayName: sanitizeDisplayName(displayName),
+    lastDisplayNameChangeAt: Date.now(),
+  });
+  return {
+    success: true,
+    remainingMs: 0,
+    settings: next,
+  };
 }
