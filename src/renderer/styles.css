@@ -356,7 +356,7 @@ button:disabled {
   width: 70%;
   height: 56%;
   left: 50%;
-  top: 11%;
+  top: calc(11% + 34px);
   transform: translateX(-50%);
   border-radius: 50%;
   pointer-events: none;
