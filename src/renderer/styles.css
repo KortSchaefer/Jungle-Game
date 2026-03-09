@@ -25,6 +25,14 @@ body {
   padding: 0.7rem;
 }
 
+body[data-body-theme="dusk"] {
+  background: linear-gradient(160deg, #e3e9f2 0%, #d9e2f0 50%, #cfd9eb 100%);
+}
+
+body[data-body-theme="sand"] {
+  background: linear-gradient(160deg, #f4efe2 0%, #efe5d1 55%, #eadcbc 100%);
+}
+
 h1,
 h2,
 h3,
@@ -56,8 +64,49 @@ h4 {
   gap: 0.9rem;
 }
 
-.hud-bar {
+.hud-bar.ui-card {
   padding: 0.85rem;
+  background: linear-gradient(135deg, #1c3123 0%, #274534 55%, #325d43 100%);
+  border-color: #2f5a40;
+  color: #eef8ef;
+  box-shadow: 0 10px 24px rgba(10, 20, 14, 0.28);
+}
+
+.app-shell[data-topbar-theme="slate"] .hud-bar.ui-card {
+  background: linear-gradient(135deg, #26353f 0%, #324a58 55%, #3b5f70 100%);
+  border-color: #4c7388;
+}
+
+.app-shell[data-topbar-theme="sunset"] .hud-bar.ui-card {
+  background: linear-gradient(135deg, #5a2f27 0%, #7a4334 55%, #955640 100%);
+  border-color: #b26f4f;
+}
+
+.hud-bar .hud-stat {
+  background: rgba(8, 16, 11, 0.26);
+  border-color: rgba(210, 236, 214, 0.24);
+}
+
+.hud-bar .hud-stat span {
+  color: rgba(236, 248, 238, 0.82);
+}
+
+.hud-bar .news-ticker {
+  background: rgba(8, 16, 11, 0.24);
+  border-color: rgba(210, 236, 214, 0.24);
+}
+
+.hud-bar .ghost-btn,
+.hud-bar button {
+  background: rgba(7, 14, 10, 0.3);
+  border-color: rgba(210, 236, 214, 0.3);
+  color: #f2faf2;
+}
+
+.hud-bar .ghost-btn:hover,
+.hud-bar button:hover {
+  background: rgba(12, 24, 17, 0.45);
+  border-color: rgba(224, 245, 226, 0.45);
 }
 
 .hud-row {
@@ -769,6 +818,10 @@ button:disabled {
   z-index: 1;
   display: grid;
   gap: 0.65rem;
+}
+
+.customize-content {
+  width: min(520px, 94vw);
 }
 
 .leaderboard-content {

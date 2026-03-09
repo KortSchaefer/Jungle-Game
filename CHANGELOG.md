@@ -3,7 +3,7 @@ All notable changes to this project are documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [1.1.5] - 2026-03-09
+## [1.1.6] - 2026-03-09
 ### Added
 - Settings toggle for graphics mode (`Modern` / `Legacy`).
 - Collapsible `PIP Shop` section with compact grid layout.
@@ -31,13 +31,22 @@ The format is based on Keep a Changelog and this project uses semantic versionin
 
 ## [Unreleased]
 ### Added
-- 
+- New `Customize` button in the HUD next to `Settings`.
+- Dedicated Customize modal for player-facing UI personalization.
+- Theme controls for:
+  - Top bar (`Forest`, `Slate`, `Sunset`)
+  - Body background (`Meadow`, `Dusk`, `Sand`)
+- Icon customization scaffold section for future avatar/icon pack releases.
+- Persistent UI settings fields for customization (`topBarTheme`, `bodyTheme`, `iconStyle`) with schema version bump to `4`.
 
 ### Changed
-- 
+- HUD/top bar visual treatment updated to a stronger differentiated theme.
+- HUD card/button/ticker contrast adjusted to remove the washed "white film" appearance.
+- Banana spawn zone moved lower (around +34px) for better on-tree placement.
 
 ### Fixed
-- 
+- Top bar theme now cleanly overrides default card styling using more specific selectors.
+- Removed duplicate return-to-main experience in upgrades flow (single nav path remains).
 
 ### Removed
 - 

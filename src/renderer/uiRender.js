@@ -70,6 +70,7 @@ import { renderHudBar } from "./components/hudBar.js";
 import { renderLeaderboardModal } from "./components/leaderboardModal.js";
 import { renderRegistrationModal } from "./components/registrationModal.js";
 import { renderSettingsModal } from "./components/settingsModal.js";
+import { renderCustomizeModal } from "./components/customizeModal.js";
 import { renderTabPanels } from "./components/tabPanels.js";
 
 function formatRequirement(requirement, formatAmount) {
@@ -204,6 +205,7 @@ export function mountUI(container) {
         ${renderTabPanels()}
       </div>
       ${renderSettingsModal()}
+      ${renderCustomizeModal()}
       ${renderLeaderboardModal()}
       ${renderRegistrationModal()}
     </main>
@@ -326,8 +328,14 @@ export function mountUI(container) {
     ceoInboxList: container.querySelector("#ceoInboxList"),
     upgradeNameCatalog: container.querySelector("#upgradeNameCatalog"),
     openSettingsBtn: container.querySelector("#openSettingsBtn"),
+    openCustomizeBtn: container.querySelector("#openCustomizeBtn"),
     closeSettingsBtn: container.querySelector("#closeSettingsBtn"),
     settingsModal: container.querySelector("#settingsModal"),
+    closeCustomizeBtn: container.querySelector("#closeCustomizeBtn"),
+    customizeModal: container.querySelector("#customizeModal"),
+    topBarThemeSelect: container.querySelector("#topBarThemeSelect"),
+    bodyThemeSelect: container.querySelector("#bodyThemeSelect"),
+    iconStyleSelect: container.querySelector("#iconStyleSelect"),
     leaderboardModal: container.querySelector("#leaderboardModal"),
     closeLeaderboardBtn: container.querySelector("#closeLeaderboardBtn"),
     refreshLeaderboardBtn: container.querySelector("#refreshLeaderboardBtn"),
@@ -365,9 +373,18 @@ export function mountUI(container) {
   let debugPanelVisible = false;
   let treeDebugVisible = false;
   const appShell = container.querySelector(".app-shell");
+  const applyThemeSettings = (sourceSettings = settings) => {
+    const topBarTheme = String(sourceSettings.topBarTheme || "forest");
+    const bodyTheme = String(sourceSettings.bodyTheme || "meadow");
+    if (appShell) {
+      appShell.setAttribute("data-topbar-theme", topBarTheme);
+    }
+    document.body.setAttribute("data-body-theme", bodyTheme);
+  };
   if (appShell) {
     appShell.setAttribute("data-graphics-mode", graphicsMode);
   }
+  applyThemeSettings(settings);
 
   const treeHarvestView = new TreeHarvestView({
     bananaLayer: elements.treeBananaLayer,
@@ -384,6 +401,15 @@ export function mountUI(container) {
   elements.companyNameInput.value = settings.companyName;
   elements.autosaveToggle.checked = settings.autosaveEnabled;
   elements.numberFormatSelect.value = settings.numberFormat;
+  if (elements.topBarThemeSelect) {
+    elements.topBarThemeSelect.value = settings.topBarTheme || "forest";
+  }
+  if (elements.bodyThemeSelect) {
+    elements.bodyThemeSelect.value = settings.bodyTheme || "meadow";
+  }
+  if (elements.iconStyleSelect) {
+    elements.iconStyleSelect.value = settings.iconStyle || "classic";
+  }
   if (elements.graphicsModeSelect) {
     elements.graphicsModeSelect.value = graphicsMode;
   }
@@ -548,12 +574,26 @@ export function mountUI(container) {
     elements.settingsModal.classList.add("is-hidden");
   }
 
+  function openCustomizeModal() {
+    elements.customizeModal.classList.remove("is-hidden");
+  }
+
+  function closeCustomizeModal() {
+    elements.customizeModal.classList.add("is-hidden");
+  }
+
   elements.openSettingsBtn.addEventListener("click", openSettingsModal);
+  if (elements.openCustomizeBtn) {
+    elements.openCustomizeBtn.addEventListener("click", openCustomizeModal);
+  }
   elements.openLeaderboardBtn.addEventListener("click", async () => {
     elements.leaderboardModal.classList.remove("is-hidden");
     await refreshLeaderboard();
   });
   elements.closeSettingsBtn.addEventListener("click", closeSettingsModal);
+  if (elements.closeCustomizeBtn) {
+    elements.closeCustomizeBtn.addEventListener("click", closeCustomizeModal);
+  }
   elements.closeLeaderboardBtn.addEventListener("click", () => {
     elements.leaderboardModal.classList.add("is-hidden");
   });
@@ -566,6 +606,14 @@ export function mountUI(container) {
       closeSettingsModal();
     }
   });
+  if (elements.customizeModal) {
+    elements.customizeModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.dataset.closeCustomize === "true") {
+        closeCustomizeModal();
+      }
+    });
+  }
   elements.leaderboardModal.addEventListener("click", (event) => {
     const target = event.target;
     if (target instanceof HTMLElement && target.dataset.closeLeaderboard === "true") {
@@ -640,6 +688,29 @@ export function mountUI(container) {
         appShell.setAttribute("data-graphics-mode", graphicsMode);
       }
       renderDirty = true;
+    });
+  }
+
+  if (elements.topBarThemeSelect) {
+    elements.topBarThemeSelect.addEventListener("change", () => {
+      const next = setUISettings({ topBarTheme: elements.topBarThemeSelect.value });
+      settings.topBarTheme = next.topBarTheme;
+      applyThemeSettings(settings);
+    });
+  }
+
+  if (elements.bodyThemeSelect) {
+    elements.bodyThemeSelect.addEventListener("change", () => {
+      const next = setUISettings({ bodyTheme: elements.bodyThemeSelect.value });
+      settings.bodyTheme = next.bodyTheme;
+      applyThemeSettings(settings);
+    });
+  }
+
+  if (elements.iconStyleSelect) {
+    elements.iconStyleSelect.addEventListener("change", () => {
+      const next = setUISettings({ iconStyle: elements.iconStyleSelect.value });
+      settings.iconStyle = next.iconStyle;
     });
   }
 

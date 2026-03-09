@@ -7,6 +7,7 @@ export function renderHudBar() {
           <button id="openLeaderboardBtn" class="ghost-btn" type="button" title="Open global leaderboard">Leaderboard</button>
           <button id="debugToggleBtn" class="ghost-btn" type="button" title="Toggle performance debug panel">Debug</button>
           <button id="resetProgressBtn" class="ghost-btn" type="button" title="Reset all game progress in the active save slot">Reset Progress</button>
+          <button id="openCustomizeBtn" class="ghost-btn" type="button" title="Customize top bar, body, and profile icon style">Customize</button>
           <button id="openSettingsBtn" class="ghost-btn" type="button" title="Open game settings">Settings</button>
         </div>
       </div>
