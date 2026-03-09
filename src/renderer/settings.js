@@ -1,5 +1,5 @@
 const SETTINGS_KEY = "jungleGameUiSettings";
-const UI_SETTINGS_SCHEMA_VERSION = 2;
+const UI_SETTINGS_SCHEMA_VERSION = 3;
 const DISPLAY_NAME_MIN_LENGTH = 3;
 const DISPLAY_NAME_MAX_LENGTH = 16;
 const DISPLAY_NAME_CHANGE_COOLDOWN_MS = 60 * 1000;
@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   schemaVersion: UI_SETTINGS_SCHEMA_VERSION,
   autosaveEnabled: true,
   numberFormat: "short",
+  graphicsMode: "modern",
   soundEnabled: false,
   treeDebugEnabled: false,
   companyName: "Monkey Banana Holdings",
@@ -80,6 +81,7 @@ function sanitizeSettings(raw, options = {}) {
   next.schemaVersion = UI_SETTINGS_SCHEMA_VERSION;
   next.autosaveEnabled = Boolean(next.autosaveEnabled);
   next.numberFormat = next.numberFormat === "scientific" ? "scientific" : "short";
+  next.graphicsMode = next.graphicsMode === "legacy" ? "legacy" : "modern";
   next.soundEnabled = Boolean(next.soundEnabled);
   next.treeDebugEnabled = Boolean(next.treeDebugEnabled);
   const slotId = Number(next.activeSaveSlot);

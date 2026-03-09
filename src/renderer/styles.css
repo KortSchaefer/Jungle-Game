@@ -339,6 +339,13 @@ button:disabled {
   filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.2));
 }
 
+/* The current modern pack ships as RGB (no alpha channel), so use multiply blending
+   to visually remove white matte backgrounds until true RGBA exports are provided. */
+.app-shell[data-graphics-mode="modern"] .tree-texture-img,
+.app-shell[data-graphics-mode="modern"] .tree-banana {
+  mix-blend-mode: multiply;
+}
+
 .tree-texture-img.is-shaking {
   animation: treeShake 380ms ease-in-out;
   will-change: transform;
@@ -520,13 +527,6 @@ button:disabled {
   align-content: start;
 }
 
-.upgrades-head {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-bottom: 0.1rem;
-}
-
 .building-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -628,6 +628,58 @@ button:disabled {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.55rem;
   margin-top: 0.45rem;
+}
+
+.pip-shop-details {
+  margin-top: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f6faf4;
+  overflow: hidden;
+}
+
+.pip-shop-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.6rem 0.7rem;
+  list-style: none;
+  border-bottom: 1px solid transparent;
+}
+
+.pip-shop-details[open] > summary {
+  border-bottom-color: var(--line);
+  background: #eef6ec;
+}
+
+.pip-upgrades-grid {
+  padding: 0.6rem;
+  margin-top: 0;
+}
+
+.achievements-details {
+  margin-top: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f6faf4;
+  overflow: hidden;
+}
+
+.achievements-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.6rem 0.7rem;
+  list-style: none;
+  border-bottom: 1px solid transparent;
+}
+
+.achievements-details[open] > summary {
+  border-bottom-color: var(--line);
+  background: #eef6ec;
+}
+
+.achievements-grid {
+  padding: 0.6rem;
+  margin-top: 0;
 }
 
 .research-tree-grid {

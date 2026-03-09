@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 
-$iconPath = Join-Path $PSScriptRoot "..\src\main\monkey.png"
+$iconPath = Join-Path $PSScriptRoot "..\src\main\legacy graphics\monkey.png"
 $iconPath = [System.IO.Path]::GetFullPath($iconPath)
 
 $sourceImage = [System.Drawing.Image]::FromFile($iconPath)

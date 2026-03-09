@@ -60,7 +60,7 @@ import {
 } from "./gameEngine.js";
 import { formatGameNumber } from "./numbers.js";
 import { themedUpgradeNames } from "./researchTree.js";
-import { treeTextures } from "./textureAssets.js";
+import { getTreeTextures, sanitizeGraphicsMode } from "./textureAssets.js";
 import { fetchLeaderboard, fetchLeaderboardMe, startLeaderboardSession, submitLeaderboardStats } from "./leaderboardApi.js";
 import { canChangeDisplayName, completeRegistration, loadUISettings, setUISettings, updateDisplayName } from "./settings.js";
 import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
@@ -342,6 +342,7 @@ export function mountUI(container) {
     confirmRegistrationBtn: container.querySelector("#confirmRegistrationBtn"),
     autosaveToggle: container.querySelector("#autosaveToggle"),
     numberFormatSelect: container.querySelector("#numberFormatSelect"),
+    graphicsModeSelect: container.querySelector("#graphicsModeSelect"),
     soundToggle: container.querySelector("#soundToggle"),
     treeDebugToggle: container.querySelector("#treeDebugToggle"),
     saveSlotSelect: container.querySelector("#saveSlotSelect"),
@@ -357,16 +358,22 @@ export function mountUI(container) {
     mainView: container.querySelector("#mainView"),
     toggleUpgradesBtn: container.querySelector("#toggleUpgradesBtn"),
     upgradesView: container.querySelector("#upgradesView"),
-    backToMainBtn: container.querySelector("#backToMainBtn"),
   };
 
   let numberFormatMode = settings.numberFormat;
+  let graphicsMode = sanitizeGraphicsMode(settings.graphicsMode);
   let debugPanelVisible = false;
   let treeDebugVisible = false;
+  const appShell = container.querySelector(".app-shell");
+  if (appShell) {
+    appShell.setAttribute("data-graphics-mode", graphicsMode);
+  }
 
   const treeHarvestView = new TreeHarvestView({
     bananaLayer: elements.treeBananaLayer,
     fxLayer: elements.treeHarvestFxLayer,
+    graphicsMode,
+    treeTierIndex: gameState.treeTierIndex,
     onBananaClick: (bananaId) => clickTreeBanana(bananaId, { source: "manual_click" }),
   });
   if (elements.treeTextureImg) {
@@ -377,6 +384,9 @@ export function mountUI(container) {
   elements.companyNameInput.value = settings.companyName;
   elements.autosaveToggle.checked = settings.autosaveEnabled;
   elements.numberFormatSelect.value = settings.numberFormat;
+  if (elements.graphicsModeSelect) {
+    elements.graphicsModeSelect.value = graphicsMode;
+  }
   elements.soundToggle.checked = settings.soundEnabled;
   if (elements.treeDebugToggle) {
     elements.treeDebugToggle.checked = Boolean(settings.treeDebugEnabled);
@@ -530,12 +540,6 @@ export function mountUI(container) {
     });
   }
 
-  if (elements.backToMainBtn) {
-    elements.backToMainBtn.addEventListener("click", () => {
-      setUpgradesViewOpen(false, true);
-    });
-  }
-
   function openSettingsModal() {
     elements.settingsModal.classList.remove("is-hidden");
   }
@@ -625,6 +629,19 @@ export function mountUI(container) {
     settings.numberFormat = next.numberFormat;
     numberFormatMode = next.numberFormat;
   });
+
+  if (elements.graphicsModeSelect) {
+    elements.graphicsModeSelect.addEventListener("change", () => {
+      const next = setUISettings({ graphicsMode: elements.graphicsModeSelect.value });
+      settings.graphicsMode = next.graphicsMode;
+      graphicsMode = sanitizeGraphicsMode(next.graphicsMode);
+      treeHarvestView.setGraphicsMode(graphicsMode);
+      if (appShell) {
+        appShell.setAttribute("data-graphics-mode", graphicsMode);
+      }
+      renderDirty = true;
+    });
+  }
 
   elements.soundToggle.addEventListener("change", () => {
     const next = setUISettings({ soundEnabled: elements.soundToggle.checked });
@@ -1014,11 +1031,13 @@ export function mountUI(container) {
     setTextIfChanged(elements.clickYieldText, fmt(state.clickYield));
     setTextIfChanged(elements.treesText, `Trees Owned: ${fmt(state.treesOwned)}`);
     setTextIfChanged(elements.treeRateText, `Each tree: ${fmt(state.bananasPerTreePerSecond)} bananas/sec`);
+    const treeTextures = getTreeTextures(graphicsMode);
     const treeTextureIndex = Math.max(0, Math.min(treeTextures.length - 1, Math.floor(Number(state.treeTierIndex) || 0)));
     const treeTextureSrc = treeTextures[treeTextureIndex];
     if (elements.treeTextureImg && elements.treeTextureImg.getAttribute("src") !== treeTextureSrc) {
       elements.treeTextureImg.setAttribute("src", treeTextureSrc);
     }
+    treeHarvestView.setTreeTierIndex(state.treeTierIndex);
     treeHarvestView.render(treeHarvestSnapshot);
     treeDebugVisible = Boolean(settings.treeDebugEnabled);
     elements.treeDebugPanel.classList.toggle("is-hidden", !treeDebugVisible);

@@ -1,4 +1,4 @@
-import { bananaTextures } from "./textureAssets.js";
+import { getBananaTextures, sanitizeGraphicsMode } from "./textureAssets.js";
 
 function toPercent(value) {
   return `${Math.max(0, Math.min(100, Number(value) || 0)).toFixed(3)}%`;
@@ -11,6 +11,32 @@ export class TreeHarvestView {
     this.fxLayer = options.fxLayer;
     this.onBananaClick = typeof options.onBananaClick === "function" ? options.onBananaClick : () => null;
     this.bananaNodes = new Map();
+    this.graphicsMode = sanitizeGraphicsMode(options.graphicsMode);
+    this.treeTierIndex = Math.max(0, Math.floor(Number(options.treeTierIndex) || 0));
+  }
+
+  setGraphicsMode(nextMode) {
+    const sanitizedMode = sanitizeGraphicsMode(nextMode);
+    if (sanitizedMode === this.graphicsMode) {
+      return;
+    }
+
+    this.graphicsMode = sanitizedMode;
+    this.bananaNodes.forEach((node) => {
+      this.#applyBananaTexture(node);
+    });
+  }
+
+  setTreeTierIndex(nextTierIndex) {
+    const sanitizedTierIndex = Math.max(0, Math.floor(Number(nextTierIndex) || 0));
+    if (sanitizedTierIndex === this.treeTierIndex) {
+      return;
+    }
+
+    this.treeTierIndex = sanitizedTierIndex;
+    this.bananaNodes.forEach((node) => {
+      this.#applyBananaTexture(node);
+    });
   }
 
   dropAllBananas() {
@@ -59,8 +85,7 @@ export class TreeHarvestView {
     node.setAttribute("role", "button");
     node.setAttribute("tabindex", "0");
     node.setAttribute("aria-label", banana.type === "diamond" ? "Diamond banana" : banana.type === "golden" ? "Golden banana" : "Banana");
-    const textureIndex = Math.abs(this.#hashId(banana.id)) % bananaTextures.length;
-    node.style.setProperty("--banana-texture", `url("${bananaTextures[textureIndex]}")`);
+    this.#applyBananaTexture(node);
     node.title = banana.type === "diamond" ? "Diamond Banana" : banana.type === "golden" ? "Golden Banana" : "Banana";
     const handleHarvest = () => {
       const result = this.onBananaClick(banana.id, banana);
@@ -85,14 +110,10 @@ export class TreeHarvestView {
     return node;
   }
 
-  #hashId(value) {
-    let hash = 0;
-    const str = String(value || "");
-    for (let i = 0; i < str.length; i += 1) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return hash;
+  #applyBananaTexture(node) {
+    const bananaTextures = getBananaTextures(this.graphicsMode);
+    const textureIndex = Math.max(0, Math.min(bananaTextures.length - 1, this.treeTierIndex));
+    node.style.setProperty("--banana-texture", `url("${bananaTextures[textureIndex]}")`);
   }
 
   #syncBananaNode(node, banana) {

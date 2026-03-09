@@ -21,6 +21,14 @@ export function renderSettingsModal() {
           </select>
         </label>
 
+        <label class="toggle-row" for="graphicsModeSelect">
+          <span>Graphics</span>
+          <select id="graphicsModeSelect">
+            <option value="modern">Modern</option>
+            <option value="legacy">Legacy</option>
+          </select>
+        </label>
+
         <label class="toggle-row" for="soundToggle">
           <span>Sound (Stub)</span>
           <input id="soundToggle" type="checkbox" />

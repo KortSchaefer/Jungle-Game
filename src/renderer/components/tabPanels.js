@@ -153,9 +153,6 @@ export function renderTabPanels() {
       </section>
 
       <section id="upgradesView" class="tab-panel upgrades-panel is-hidden" aria-hidden="true">
-        <div class="upgrades-head">
-          <button id="backToMainBtn" class="ghost-btn" type="button" aria-controls="mainView">Back To Main</button>
-        </div>
         <div class="ui-card">
           <h3>Primate Intelligence Prestige</h3>
           <p id="pipText">PIP: 0</p>
@@ -170,7 +167,10 @@ export function renderTabPanels() {
         <div class="ui-card">
           <h3>PIP Shop</h3>
           <p id="pipShopSummaryText">Spend PIP on permanent cross-run upgrades.</p>
-          <div id="pipUpgradesList" class="buyers-list"></div>
+          <details id="pipShopDetails" class="pip-shop-details">
+            <summary>PIP Upgrades</summary>
+            <div id="pipUpgradesList" class="upgrade-grid pip-upgrades-grid"></div>
+          </details>
         </div>
 
         <div class="ui-card">
@@ -218,8 +218,10 @@ export function renderTabPanels() {
 
         <div class="ui-card">
           <h3>Achievements</h3>
-          <p id="achievementSummaryText">0 / 40 unlocked</p>
-          <div id="achievementsList" class="buyers-list"></div>
+          <details id="achievementsDetails" class="achievements-details">
+            <summary>Achievement List (<span id="achievementSummaryText">0 / 40 unlocked</span>)</summary>
+            <div id="achievementsList" class="upgrade-grid achievements-grid"></div>
+          </details>
         </div>
 
         <div class="ui-card">

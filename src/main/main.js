@@ -97,7 +97,7 @@ function createWindow() {
     width: 1600,
     height: 900,
     show: false,
-    icon: path.join(__dirname, "monkey.png"),
+    icon: path.join(__dirname, "legacy graphics", "monkey.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
