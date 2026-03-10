@@ -1101,7 +1101,7 @@ export function mountUI(container) {
     setTextIfChanged(elements.bpsText, fmt(bananasPerSecond));
     setTextIfChanged(elements.clickYieldText, fmt(state.clickYield));
     setTextIfChanged(elements.treesText, `Trees Owned: ${fmt(state.treesOwned)}`);
-    setTextIfChanged(elements.treeRateText, `Each tree: ${fmt(state.bananasPerTreePerSecond)} bananas/sec`);
+    setTextIfChanged(elements.treeRateText, `Harvest power: ${fmt(state.productionMultiplier)}x`);
     const treeTextures = getTreeTextures(graphicsMode);
     const treeTextureIndex = Math.max(0, Math.min(treeTextures.length - 1, Math.floor(Number(state.treeTierIndex) || 0)));
     const treeTextureSrc = treeTextures[treeTextureIndex];

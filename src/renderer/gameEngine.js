@@ -1022,7 +1022,11 @@ function recomputeDerivedStats() {
 
   const workerBase = clampNonNegative(Number(gameState.workersBasePerSecond) || DEFAULT_STATE.workersBasePerSecond);
   const workerPrestigeMultiplier = 1 + Math.max(0, gameState.pip) * 0.005;
-  gameState.bananasPerWorkerPerSecond = stabilizeNumber(workerBase * workerPrestigeMultiplier * achievementMultipliers.workerMultiplier);
+  // Production multipliers must affect real active-income paths (workers + tree harvest),
+  // not only legacy per-tree passive stats that are no longer used for earning.
+  gameState.bananasPerWorkerPerSecond = stabilizeNumber(
+    workerBase * workerPrestigeMultiplier * achievementMultipliers.workerMultiplier * gameState.productionMultiplier
+  );
   gameState.clickYield = stabilizeNumber(BASE_CLICK_YIELD * gameState.clickMultiplier);
 
   const ownedTrees = clampNonNegative(gameState.treesOwned);
@@ -1048,7 +1052,12 @@ function recomputeDerivedStats() {
       pipModifiers.maxBananasFlat +
       treeCapacityBonusFromTrees +
       fertilizerCapacityBonus,
-    clickHarvestYield: gameState.clickYield * (Number(tierHarvest.clickYieldMultiplier) || 1) * treeHarvestModifiers.clickYieldMultiplier * pipModifiers.clickYieldMultiplier,
+    clickHarvestYield:
+      gameState.clickYield *
+      gameState.productionMultiplier *
+      (Number(tierHarvest.clickYieldMultiplier) || 1) *
+      treeHarvestModifiers.clickYieldMultiplier *
+      pipModifiers.clickYieldMultiplier,
     goldenChance: 0.005 + (Number(tierHarvest.goldenChanceAdd) || 0) + treeHarvestModifiers.goldenChanceAdd + pipModifiers.goldenChanceAdd,
     goldenMultiplier: 35 + (Number(tierHarvest.goldenMultiplierAdd) || 0) + treeHarvestModifiers.goldenMultiplierAdd + pipModifiers.goldenMultiplierAdd,
     diamondChance: 0.0005 + (Number(tierHarvest.diamondChanceAdd) || 0) + treeHarvestModifiers.diamondChanceAdd,
@@ -1780,8 +1789,84 @@ function performAutoSell() {
   }
 
   removeBananas(excess);
-  addCash(excess * AUTO_SELL_PRICE_PER_BANANA);
+  addCash(excess * getAutoSellPricePerBanana());
   return excess;
+}
+
+function performAutoExportOffline(elapsedSeconds) {
+  if (!gameState.autoExportUnlocked || !gameState.autoExportEnabled) {
+    return 0;
+  }
+
+  const elapsedMs = Math.max(0, Number(elapsedSeconds) || 0) * 1000;
+  if (elapsedMs <= 0) {
+    return 0;
+  }
+
+  const now = Date.now();
+  const readyBuyers = buyers
+    .filter((buyer) => isBuyerUnlocked(buyer.id))
+    .sort((a, b) => getBuyerEffectivePricePerBanana(b) - getBuyerEffectivePricePerBanana(a));
+
+  let shippedCount = 0;
+  readyBuyers.forEach((buyer) => {
+    const cooldownMs = Math.max(1000, buyer.cooldownSeconds * gameState.exportCooldownMultiplier * 1000);
+    const cooldownEndAtLoad = Number(gameState.buyerCooldowns[buyer.id]) || 0;
+    const remainingAtNowMs = Math.max(0, cooldownEndAtLoad - now);
+    const remainingAtWindowStartMs = Math.max(0, remainingAtNowMs + elapsedMs);
+
+    if (remainingAtWindowStartMs >= elapsedMs) {
+      const remainingAtWindowEnd = remainingAtWindowStartMs - elapsedMs;
+      if (remainingAtWindowEnd > 0) {
+        gameState.buyerCooldowns[buyer.id] = now + remainingAtWindowEnd;
+      }
+      return;
+    }
+
+    const lane = getSelectedShippingLane();
+    const maxAllowedShipment = Math.min(buyer.maxShipment, getEffectiveShippingLaneCapacity(lane));
+    if (maxAllowedShipment < buyer.minShipment) {
+      delete gameState.buyerCooldowns[buyer.id];
+      return;
+    }
+
+    let nextShipmentAtMs = remainingAtWindowStartMs;
+    let lastShipmentAtMs = -1;
+    while (nextShipmentAtMs < elapsedMs) {
+      const available = Math.floor(clampNonNegative(Number(gameState.bananas) || 0));
+      const shipmentAmount = Math.min(maxAllowedShipment, available);
+      if (shipmentAmount < buyer.minShipment) {
+        break;
+      }
+
+      const revenue = shipmentAmount * getBuyerEffectivePricePerBanana(buyer);
+      removeBananas(shipmentAmount);
+      addCash(revenue);
+      gameState.totalShipments += shipmentAmount;
+      changeBuyerReputation(buyer.id, 0.9);
+      const currentShipped = gameState.lifetimeBuyerShipmentTotals[buyer.id] || 0;
+      gameState.lifetimeBuyerShipmentTotals[buyer.id] = addStable(currentShipped, shipmentAmount);
+      applyShipmentToContracts(buyer.id, shipmentAmount);
+      shippedCount += 1;
+      lastShipmentAtMs = nextShipmentAtMs;
+      nextShipmentAtMs += cooldownMs;
+    }
+
+    if (lastShipmentAtMs >= 0) {
+      const nextReadyAtMs = lastShipmentAtMs + cooldownMs;
+      const remainingAtWindowEnd = Math.max(0, nextReadyAtMs - elapsedMs);
+      if (remainingAtWindowEnd > 0) {
+        gameState.buyerCooldowns[buyer.id] = now + remainingAtWindowEnd;
+      } else {
+        delete gameState.buyerCooldowns[buyer.id];
+      }
+      return;
+    }
+
+    delete gameState.buyerCooldowns[buyer.id];
+  });
+
+  return shippedCount;
 }
 
 function tryShipToBuyerInternal(buyer, amount, options = {}) {
@@ -2450,7 +2535,7 @@ export function applyOfflineProgress(elapsedSeconds) {
   gameState.tree = treeHarvestSystem.serialize();
   processWeirdScienceConverters(safeElapsedSeconds);
   gameState.lastTickTime = Date.now();
-  performAutoExport();
+  performAutoExportOffline(safeElapsedSeconds);
   performAutoSell();
   assertFiniteCoreState("applyOfflineProgress");
   logEconomyDebug("offline-after", {
@@ -2555,12 +2640,11 @@ export function __testElapsedSeconds(lastTickTimeMs, nowMs = Date.now()) {
 }
 
 export function __testOfflineBananaGain(input = {}) {
-  const treesOwned = Math.max(0, Number(input.treesOwned) || 0);
-  const bananasPerTreePerSecond = Math.max(0, Number(input.bananasPerTreePerSecond) || 0);
   const workersOwned = Math.max(0, Number(input.workersOwned) || 0);
   const bananasPerWorkerPerSecond = Math.max(0, Number(input.bananasPerWorkerPerSecond) || 0);
   const elapsedSeconds = Math.max(0, Number(input.elapsedSeconds) || 0);
-  return stabilizeNumber((treesOwned * bananasPerTreePerSecond + workersOwned * bananasPerWorkerPerSecond) * elapsedSeconds);
+  // The live economy no longer grants passive tree/sec income.
+  return stabilizeNumber((workersOwned * bananasPerWorkerPerSecond) * elapsedSeconds);
 }
 
 export function getMarketPricePerBanana(bananaTypeId = null) {
