@@ -31,11 +31,14 @@ export function validateSubmissionDelta({
   const prevBananas = Number(previousStats.total_bananas_earned);
   const prevUpdatedAt = new Date(previousStats.updated_at);
   const deltaMinutes = minutesBetween(prevUpdatedAt, now);
+  const prestigedSinceLastSubmit = incomingPrestigeCount > prevPrestige;
 
   if (incomingPrestigeCount < prevPrestige) {
     return { ok: false, reason: "prestige_decrease_not_allowed" };
   }
-  if (incomingTotalBananas < prevBananas) {
+  // Some game designs reset run-based banana counters on prestige.
+  // Only allow a banana decrease when prestige has increased since last submit.
+  if (incomingTotalBananas < prevBananas && !prestigedSinceLastSubmit) {
     return { ok: false, reason: "total_bananas_decrease_not_allowed" };
   }
 
@@ -54,9 +57,11 @@ export function validateSubmissionDelta({
   }
 
   const bananaGain = incomingTotalBananas - prevBananas;
-  const bananaLimit = deltaMinutes * MAX_BANANAS_GAIN_PER_MIN + 5e12;
-  if (bananaGain > bananaLimit) {
-    return { ok: false, reason: "banana_gain_too_large" };
+  if (bananaGain >= 0) {
+    const bananaLimit = deltaMinutes * MAX_BANANAS_GAIN_PER_MIN + 5e12;
+    if (bananaGain > bananaLimit) {
+      return { ok: false, reason: "banana_gain_too_large" };
+    }
   }
 
   return { ok: true };

@@ -38,15 +38,23 @@ The format is based on Keep a Changelog and this project uses semantic versionin
   - Body background (`Meadow`, `Dusk`, `Sand`)
 - Icon customization scaffold section for future avatar/icon pack releases.
 - Persistent UI settings fields for customization (`topBarTheme`, `bodyTheme`, `iconStyle`) with schema version bump to `4`.
+- Release script Discord webhook integration for posting new version changelog notes:
+  - `scripts/release.ps1`
+  - uses `DISCORD_WEBHOOK_URL` env var
 
 ### Changed
 - HUD/top bar visual treatment updated to a stronger differentiated theme.
 - HUD card/button/ticker contrast adjusted to remove the washed "white film" appearance.
 - Banana spawn zone moved lower (around +34px) for better on-tree placement.
+- Research Hut discount pipeline now applies consistently to:
+  - tree harvest upgrades
+  - tree tier unlock cash cost
+  - tree purchase (`Add Tree`) cash cost
 
 ### Fixed
 - Top bar theme now cleanly overrides default card styling using more specific selectors.
 - Removed duplicate return-to-main experience in upgrades flow (single nav path remains).
+- Leaderboard anti-cheat now allows `totalBananasEarned` to decrease when prestige count increases between submissions (valid prestige reset path).
 
 ### Removed
 - 
