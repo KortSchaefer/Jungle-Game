@@ -16,6 +16,7 @@ import {
   getBuildingCost,
   getCurrentTreeTier,
   getCurrentQuestStatus,
+  getEffectiveTreeTierUnlockCost,
   getEffectiveUpgradeCost,
   getLiveEventStatus,
   getMarketPricePerBanana,
@@ -29,6 +30,7 @@ import {
   getResearchPointsPerSecond,
   getResearchTreeNodes,
   getShippingLanesStatus,
+  getStatBreakdown,
   getTotalBananasPerSecond,
   getTreeHarvestSnapshot,
   getTreeHarvestUpgradesStatus,
@@ -222,12 +224,24 @@ export function mountUI(container) {
     eventNameText: container.querySelector("#eventNameText"),
     eventDetailText: container.querySelector("#eventDetailText"),
     debugToggleBtn: container.querySelector("#debugToggleBtn"),
+    inspectorToggleBtn: container.querySelector("#inspectorToggleBtn"),
     openLeaderboardBtn: container.querySelector("#openLeaderboardBtn"),
     resetProgressBtn: container.querySelector("#resetProgressBtn"),
     debugPanel: container.querySelector("#debugPanel"),
+    statInspectorPanel: container.querySelector("#statInspectorPanel"),
     debugTickText: container.querySelector("#debugTickText"),
     debugRenderText: container.querySelector("#debugRenderText"),
     debugFpsText: container.querySelector("#debugFpsText"),
+    inspectorProductionText: container.querySelector("#inspectorProductionText"),
+    inspectorClickText: container.querySelector("#inspectorClickText"),
+    inspectorExportText: container.querySelector("#inspectorExportText"),
+    inspectorCooldownText: container.querySelector("#inspectorCooldownText"),
+    inspectorHarvestText: container.querySelector("#inspectorHarvestText"),
+    inspectorSpawnText: container.querySelector("#inspectorSpawnText"),
+    inspectorWorkerText: container.querySelector("#inspectorWorkerText"),
+    inspectorOrchardText: container.querySelector("#inspectorOrchardText"),
+    inspectorPricesText: container.querySelector("#inspectorPricesText"),
+    inspectorSourcesText: container.querySelector("#inspectorSourcesText"),
     companyNameInput: container.querySelector("#companyNameInput"),
     playerIdText: container.querySelector("#playerIdText"),
     displayNameInput: container.querySelector("#displayNameInput"),
@@ -371,6 +385,7 @@ export function mountUI(container) {
   let numberFormatMode = settings.numberFormat;
   let graphicsMode = sanitizeGraphicsMode(settings.graphicsMode);
   let debugPanelVisible = false;
+  let inspectorPanelVisible = false;
   let treeDebugVisible = false;
   const appShell = container.querySelector(".app-shell");
   const applyThemeSettings = (sourceSettings = settings) => {
@@ -732,6 +747,14 @@ export function mountUI(container) {
     elements.debugToggleBtn.textContent = debugPanelVisible ? "Hide Debug" : "Debug";
   });
 
+  if (elements.inspectorToggleBtn && elements.statInspectorPanel) {
+    elements.inspectorToggleBtn.addEventListener("click", () => {
+      inspectorPanelVisible = !inspectorPanelVisible;
+      elements.statInspectorPanel.classList.toggle("is-hidden", !inspectorPanelVisible);
+      elements.inspectorToggleBtn.textContent = inspectorPanelVisible ? "Hide Inspector" : "Inspector";
+    });
+  }
+
   elements.resetProgressBtn.addEventListener("click", async () => {
     const shouldReset = window.confirm("Reset all progress in the active save slot? This cannot be undone.");
     if (!shouldReset) {
@@ -1085,6 +1108,7 @@ export function mountUI(container) {
 
     const bananasPerSecond = getTotalBananasPerSecond();
     const breakdown = getProductionBreakdown();
+    const statBreakdown = getStatBreakdown();
     const treeHarvestSnapshot = getTreeHarvestSnapshot();
     const treeHarvestUpgrades = getTreeHarvestUpgradesStatus();
     const currentTier = getCurrentTreeTier();
@@ -1102,6 +1126,24 @@ export function mountUI(container) {
     setTextIfChanged(elements.clickYieldText, fmt(state.clickYield));
     setTextIfChanged(elements.treesText, `Trees Owned: ${fmt(state.treesOwned)}`);
     setTextIfChanged(elements.treeRateText, `Harvest power: ${fmt(state.productionMultiplier)}x`);
+    if (inspectorPanelVisible) {
+      setTextIfChanged(elements.inspectorProductionText, `Production: ${fmt(statBreakdown.final.productionMultiplier)}x`);
+      setTextIfChanged(elements.inspectorClickText, `Click: ${fmt(statBreakdown.final.clickMultiplier)}x`);
+      setTextIfChanged(elements.inspectorExportText, `Export: ${fmt(statBreakdown.final.exportPriceMultiplier)}x`);
+      setTextIfChanged(elements.inspectorCooldownText, `Cooldown: ${fmt(statBreakdown.final.exportCooldownMultiplier)}x`);
+      setTextIfChanged(elements.inspectorHarvestText, `Harvest yield/pick: ${fmt(statBreakdown.final.clickHarvestYield)}`);
+      setTextIfChanged(elements.inspectorSpawnText, `Spawn interval: ${fmt(statBreakdown.final.spawnInterval)}s (cap ${fmt(statBreakdown.final.maxBananasOnTree)})`);
+      setTextIfChanged(elements.inspectorWorkerText, `Worker output: ${fmt(statBreakdown.final.workerOutputPerSecond)}/s`);
+      setTextIfChanged(elements.inspectorOrchardText, `Orchard picks: ${fmt(statBreakdown.final.orchardPickRatePerSecond)}/s`);
+      setTextIfChanged(
+        elements.inspectorPricesText,
+        `Market/AutoSell: $${fmt(statBreakdown.final.marketPricePerBanana)} / $${fmt(statBreakdown.final.autoSellPricePerBanana)}`
+      );
+      setTextIfChanged(
+        elements.inspectorSourcesText,
+        `Sources: Prestige ${fmt(statBreakdown.sources.prestigeProduction)}x | PIP ${fmt(statBreakdown.sources.pipProduction)}x | Achievements ${fmt(statBreakdown.sources.achievementProduction)}x | Research rows ${fmt(statBreakdown.sources.researchRowProduction)}x | Evolution ${fmt(statBreakdown.sources.evolutionProduction)}x | CEO ${fmt(statBreakdown.sources.ceoGlobal)}x`
+      );
+    }
     const treeTextures = getTreeTextures(graphicsMode);
     const treeTextureIndex = Math.max(0, Math.min(treeTextures.length - 1, Math.floor(Number(state.treeTierIndex) || 0)));
     const treeTextureSrc = treeTextures[treeTextureIndex];
@@ -1132,12 +1174,19 @@ export function mountUI(container) {
       elements.treeHarvestUpgradesList,
       treeHarvestUpgrades
         .map((upgrade) => {
-          const buttonLabel = upgrade.purchased ? "Purchased" : `Buy ($${fmt(upgrade.costCash)})`;
+          const effectiveCostCash = Number(upgrade.effectiveCostCash || upgrade.costCash || 0);
+          const baseCostCash = Number(upgrade.costCash || 0);
+          const showDiscount = !upgrade.purchased && effectiveCostCash < baseCostCash;
+          const buttonLabel = upgrade.purchased ? "Purchased" : `Buy ($${fmt(effectiveCostCash)})`;
           const disabled = upgrade.purchased || !upgrade.unlocked || !upgrade.canAfford;
           const reqText = upgrade.unlocked ? "" : `Requires: ${(upgrade.requires || []).join(", ")}`;
+          const costText = showDiscount
+            ? `<p>Cost: $${fmt(effectiveCostCash)} (base $${fmt(baseCostCash)})</p>`
+            : `<p>Cost: $${fmt(baseCostCash)}</p>`;
           return `<div class="buyer-card">
           <p class="buyer-name">${upgrade.name}</p>
           <p>${upgrade.description}</p>
+          ${costText}
           ${reqText ? `<p>${reqText}</p>` : ""}
           <button type="button" data-harvest-upgrade-id="${upgrade.id}" ${disabled ? "disabled" : ""}>${buttonLabel}</button>
         </div>`;
@@ -1150,7 +1199,7 @@ export function mountUI(container) {
     if (elements.orchardText) {
       setTextIfChanged(
         elements.orchardText,
-        `Orchards: ${fmt(orchardStatus.orchardsOwned)} (${fmt(orchardStatus.pickRatePerSecond)} picks/sec)`
+        `Orchards: ${fmt(orchardStatus.orchardsOwned)} (${fmt(orchardStatus.pickRatePerSecond)} picks/sec, +${fmt(orchardStatus.capacityBonus)} canopy cap)`
       );
     }
     if (elements.orchardInfoText) {
@@ -1162,7 +1211,10 @@ export function mountUI(container) {
       } else if (!orchardStatus.cashGateMet) {
         setTextIfChanged(elements.orchardInfoText, `Requirement: Have at least $${fmt(orchardStatus.cashGate)} cash to start orchard ops.`);
       } else {
-        setTextIfChanged(elements.orchardInfoText, "Unlocked: Orchards automatically pick bananas directly off the tree.");
+        setTextIfChanged(
+          elements.orchardInfoText,
+          `Unlocked: Orchards boost throughput (spawn ${fmt((1 - orchardStatus.spawnIntervalMultiplier) * 100)}% faster) and export value (+${fmt((orchardStatus.exportBonusMultiplier - 1) * 100)}%).`
+        );
       }
     }
     if (elements.buyOrchardBtn) {
@@ -1184,10 +1236,15 @@ export function mountUI(container) {
     setTextIfChanged(elements.currentTierText, `Current Tier: ${currentTier.icon || ""} ${currentTier.name}`.trim());
 
     if (nextTier) {
-      const unlockCost = Number(nextTier.unlockCostCash) || 0;
+      const baseUnlockCost = Number(nextTier.unlockCostCash) || 0;
+      const unlockCost = getEffectiveTreeTierUnlockCost(nextTier);
       const questComplete = questStatus?.isComplete ?? true;
       setTextIfChanged(elements.nextTierText, `Next Tier: ${nextTier.icon || ""} ${nextTier.name} (${fmt(nextTier.baseBananasPerSecondPerTree)} base bps/tree)`.trim());
-      setTextIfChanged(elements.tierUnlockCostText, `Unlock cost: $${fmt(unlockCost)}`);
+      if (unlockCost < baseUnlockCost) {
+        setTextIfChanged(elements.tierUnlockCostText, `Unlock cost: $${fmt(unlockCost)} (base $${fmt(baseUnlockCost)})`);
+      } else {
+        setTextIfChanged(elements.tierUnlockCostText, `Unlock cost: $${fmt(unlockCost)}`);
+      }
       setDisabledIfChanged(elements.unlockTierBtn, state.cash < unlockCost || !questComplete);
       setTextIfChanged(elements.unlockTierBtn, `Unlock Next Tier ($${fmt(unlockCost)})`);
     } else {
@@ -1199,7 +1256,7 @@ export function mountUI(container) {
 
     if (questStatus) {
       const questPct = (questStatus.progressPct * 100).toFixed(1);
-      const cashTarget = Number(nextTier?.unlockCostCash) || 0;
+      const cashTarget = getEffectiveTreeTierUnlockCost(nextTier);
       const cashPct = cashTarget <= 0 ? 100 : Math.min(100, (state.cash / cashTarget) * 100);
       setTextIfChanged(elements.questTitleText, `Current quest: ${questStatus.description}`);
       setTextIfChanged(elements.questRewardText, `Reward: ${questStatus.rewardDescription}`);

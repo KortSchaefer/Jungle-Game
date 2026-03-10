@@ -20,10 +20,15 @@ const TREE_TIER_VALUE_MULTIPLIERS = Object.freeze([1, 1.25, 1.6, 2.2, 3.4, 5.5, 
 // Orchard automation unlock: milestone + cash gate.
 // This is intentionally later than workers so the early loop stays click + worker driven.
 const ORCHARD_UNLOCK_MILESTONE_ID = "milestone_industry";
-const ORCHARD_UNLOCK_CASH_REQUIREMENT = 2500;
+const ORCHARD_UNLOCK_CASH_REQUIREMENT = 1200;
 
 const WORKER_COST_GROWTH = 1.15;
 const BUILDING_COST_GROWTH = 1.35;
+const ORCHARD_CAPACITY_BONUS_PER_ORCHARD = 1;
+const ORCHARD_SPAWN_INTERVAL_STEP = 0.008;
+const ORCHARD_MIN_SPAWN_INTERVAL_MULTIPLIER = 0.65;
+const ORCHARD_EXPORT_BONUS_PER_ORCHARD = 0.01;
+const ORCHARD_MAX_EXPORT_BONUS = 2.5;
 const MAX_ACTIVE_CONTRACTS = 3;
 const CONTRACT_GENERATION_INTERVAL_SECONDS = 45;
 const EVENT_MIN_ROLL_SECONDS = 120;
@@ -473,14 +478,15 @@ const DEFAULT_STATE = Object.freeze({
   exportPriceMultiplier: 1,
   exportCooldownMultiplier: 1,
   packedExportBonusMultiplier: 1,
+  orchardExportBonusMultiplier: 1,
   evolutionProductionMultiplier: 1,
   treeBaseCost: 25,
   treeCostGrowth: TREE_COST_GROWTH,
   workerBaseCost: 40,
   workerCostGrowth: WORKER_COST_GROWTH,
-  orchardBaseCost: 4000,
-  orchardCostGrowth: 1.22,
-  orchardPickRatePerSecondPerOrchard: 0.85,
+  orchardBaseCost: 1800,
+  orchardCostGrowth: 1.18,
+  orchardPickRatePerSecondPerOrchard: 1.4,
   packingShedLevel: 0,
   fertilizerLabLevel: 0,
   researchHutLevel: 0,
@@ -906,6 +912,11 @@ function getResearchDiscountMultiplier() {
   return Math.max(0.35, (1 - getBuildingLevel("research_hut") * 0.03) * pipModifiers.researchDiscountMultiplier);
 }
 
+function getEffectiveCashCost(baseCost) {
+  const safeBaseCost = Math.max(0, Number(baseCost) || 0);
+  return stabilizeNumber(safeBaseCost * getResearchDiscountMultiplier());
+}
+
 function getAntimatterExportBoostMultiplier() {
   const antimatter = clampNonNegative(Number(gameState.antimatterBananas) || 0);
   // Strong late-game reward curve for weird science progression.
@@ -996,6 +1007,25 @@ function getTierPickerUpdateCaps() {
   };
 }
 
+function getOrchardSystemBonuses() {
+  const orchardsOwned = Math.max(0, Math.floor(Number(gameState.orchardsOwned) || 0));
+  const capacityBonus = orchardsOwned * ORCHARD_CAPACITY_BONUS_PER_ORCHARD;
+  const spawnIntervalMultiplier = Math.max(
+    ORCHARD_MIN_SPAWN_INTERVAL_MULTIPLIER,
+    1 - orchardsOwned * ORCHARD_SPAWN_INTERVAL_STEP
+  );
+  const exportBonusMultiplier = Math.min(
+    ORCHARD_MAX_EXPORT_BONUS,
+    1 + orchardsOwned * ORCHARD_EXPORT_BONUS_PER_ORCHARD
+  );
+  return {
+    orchardsOwned,
+    capacityBonus,
+    spawnIntervalMultiplier: stabilizeNumber(spawnIntervalMultiplier),
+    exportBonusMultiplier: stabilizeNumber(exportBonusMultiplier),
+  };
+}
+
 function recomputeDerivedStats() {
   const upgradeModifiers = gameState.purchasedUpgradeIds.reduce((current, upgradeId) => {
     const upgrade = upgradeById.get(upgradeId);
@@ -1007,14 +1037,28 @@ function recomputeDerivedStats() {
   const achievementMultipliers = getAchievementMultipliers();
   const treeHarvestModifiers = getTreeHarvestModifiers();
   const pipModifiers = getPipModifiers();
+  const orchardBonuses = getOrchardSystemBonuses();
   const ceoGlobalMultiplier = getCeoGlobalMultiplier();
   const researchCompletionMultipliers = getResearchCompletionMultipliers();
 
   gameState.productionMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * pipModifiers.productionMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.productionMultiplier));
   gameState.clickMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * pipModifiers.clickMultiplier * researchCompletionMultipliers.clickMultiplier));
-  gameState.exportPriceMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.exportPriceMultiplier * prestigeBonuses.exportPriceMultiplier * packingMultiplier * achievementMultipliers.exportPriceMultiplier * pipModifiers.exportPriceMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.exportPriceMultiplier));
+  gameState.exportPriceMultiplier = Math.max(
+    1,
+    stabilizeNumber(
+      upgradeModifiers.exportPriceMultiplier *
+        prestigeBonuses.exportPriceMultiplier *
+        packingMultiplier *
+        achievementMultipliers.exportPriceMultiplier *
+        pipModifiers.exportPriceMultiplier *
+        orchardBonuses.exportBonusMultiplier *
+        ceoGlobalMultiplier *
+        researchCompletionMultipliers.exportPriceMultiplier
+    )
+  );
   gameState.exportCooldownMultiplier = Math.max(0.1, stabilizeNumber(upgradeModifiers.exportCooldownMultiplier * pipModifiers.exportCooldownMultiplier));
   gameState.packedExportBonusMultiplier = stabilizeNumber(packingMultiplier);
+  gameState.orchardExportBonusMultiplier = orchardBonuses.exportBonusMultiplier;
 
   const tier = treeTiers[gameState.treeTierIndex];
   const tierHarvest = tier?.harvest || {};
@@ -1044,6 +1088,7 @@ function recomputeDerivedStats() {
       treeHarvestModifiers.spawnIntervalMultiplier *
       pipModifiers.spawnIntervalMultiplier *
       spawnIntervalMultiplierFromTrees *
+      orchardBonuses.spawnIntervalMultiplier *
       fertilizerSpawnMultiplier,
     maxBananasOnTree:
       12 +
@@ -1051,6 +1096,7 @@ function recomputeDerivedStats() {
       treeHarvestModifiers.maxBananasFlat +
       pipModifiers.maxBananasFlat +
       treeCapacityBonusFromTrees +
+      orchardBonuses.capacityBonus +
       fertilizerCapacityBonus,
     clickHarvestYield:
       gameState.clickYield *
@@ -2011,6 +2057,39 @@ export function getProductionBreakdown() {
   };
 }
 
+export function getStatBreakdown() {
+  const treeSnapshot = treeHarvestSystem.getSnapshot();
+  const prestige = getPrestigeBonuses();
+  const pip = getPipModifiers();
+  const achievements = getAchievementMultipliers();
+  const researchRows = getResearchCompletionMultipliers();
+  const orchardPickRate = getOrchardPickRatePerSecond();
+
+  return {
+    final: {
+      productionMultiplier: stabilizeNumber(gameState.productionMultiplier),
+      clickMultiplier: stabilizeNumber(gameState.clickMultiplier),
+      exportPriceMultiplier: stabilizeNumber(gameState.exportPriceMultiplier),
+      exportCooldownMultiplier: stabilizeNumber(gameState.exportCooldownMultiplier),
+      clickHarvestYield: stabilizeNumber(treeSnapshot.clickHarvestYield),
+      spawnInterval: stabilizeNumber(treeSnapshot.spawnInterval),
+      maxBananasOnTree: Math.max(1, Math.floor(Number(treeSnapshot.maxBananasOnTree) || 1)),
+      workerOutputPerSecond: stabilizeNumber(gameState.workersOwned * gameState.bananasPerWorkerPerSecond),
+      orchardPickRatePerSecond: stabilizeNumber(orchardPickRate),
+      marketPricePerBanana: stabilizeNumber(getMarketPricePerBanana()),
+      autoSellPricePerBanana: stabilizeNumber(getAutoSellPricePerBanana()),
+    },
+    sources: {
+      prestigeProduction: stabilizeNumber(prestige.productionMultiplier),
+      pipProduction: stabilizeNumber(pip.productionMultiplier),
+      achievementProduction: stabilizeNumber(achievements.productionMultiplier),
+      researchRowProduction: stabilizeNumber(researchRows.productionMultiplier),
+      evolutionProduction: stabilizeNumber(gameState.evolutionProductionMultiplier),
+      ceoGlobal: stabilizeNumber(getCeoGlobalMultiplier()),
+    },
+  };
+}
+
 export function getUnlockedBananaTypes() {
   return getUnlockedBananaTypesInternal();
 }
@@ -2072,11 +2151,13 @@ export function getTreeHarvestUpgradesStatus() {
     const purchased = gameState.purchasedTreeHarvestUpgradeIds.includes(upgrade.id);
     const requires = Array.isArray(upgrade.requires) ? upgrade.requires : [];
     const requirementsMet = requires.every((requiredId) => gameState.purchasedTreeHarvestUpgradeIds.includes(requiredId));
+    const effectiveCostCash = getEffectiveCashCost(upgrade.costCash);
     return {
       ...upgrade,
       purchased,
       unlocked: requirementsMet,
-      canAfford: gameState.cash >= upgrade.costCash,
+      effectiveCostCash,
+      canAfford: gameState.cash >= effectiveCostCash,
     };
   });
 }
@@ -2148,10 +2229,11 @@ export function purchaseTreeHarvestUpgrade(upgradeId) {
   }
   const requires = Array.isArray(upgrade.requires) ? upgrade.requires : [];
   const requirementsMet = requires.every((requiredId) => gameState.purchasedTreeHarvestUpgradeIds.includes(requiredId));
-  if (!requirementsMet || gameState.cash < upgrade.costCash) {
+  const effectiveCostCash = getEffectiveCashCost(upgrade.costCash);
+  if (!requirementsMet || gameState.cash < effectiveCostCash) {
     return false;
   }
-  removeCash(upgrade.costCash);
+  removeCash(effectiveCostCash);
   gameState.purchasedTreeHarvestUpgradeIds = [...gameState.purchasedTreeHarvestUpgradeIds, upgradeId];
   recomputeDerivedStats();
   notifyListeners();
@@ -2338,7 +2420,7 @@ export function getEffectiveUpgradeCost(upgradeIdOrObject) {
   }
 
   return {
-    cash: stabilizeNumber((upgrade.costCash || 0) * getResearchDiscountMultiplier()),
+    cash: getEffectiveCashCost(upgrade.costCash || 0),
     researchPoints: stabilizeNumber(upgrade.costResearchPoints || 0),
   };
 }
@@ -2689,8 +2771,8 @@ export function getNextTreeTier() {
 }
 
 export function getTreeCost() {
-  const cost = gameState.treeBaseCost * gameState.treeCostGrowth ** gameState.treesOwned;
-  return stabilizeNumber(cost);
+  const baseCost = gameState.treeBaseCost * gameState.treeCostGrowth ** gameState.treesOwned;
+  return getEffectiveCashCost(baseCost);
 }
 
 function getOrchardUnlockMilestone() {
@@ -2715,8 +2797,14 @@ export function getOrchardPickRatePerSecond() {
     return 0;
   }
   const owned = Math.max(0, Math.floor(Number(gameState.orchardsOwned) || 0));
+  if (owned <= 0) {
+    return 0;
+  }
   const per = Math.max(0, Number(gameState.orchardPickRatePerSecondPerOrchard) || DEFAULT_STATE.orchardPickRatePerSecondPerOrchard);
-  return stabilizeNumber(owned * per * getPipModifiers().orchardPickMultiplier);
+  const tierIndex = Math.max(0, Math.floor(Number(gameState.treeTierIndex) || 0));
+  const tierMultiplier = 1 + tierIndex * 0.05;
+  const scaleExponent = 0.9;
+  return stabilizeNumber((owned ** scaleExponent) * per * tierMultiplier * getPipModifiers().orchardPickMultiplier);
 }
 
 export function buyOrchard() {
@@ -2748,6 +2836,7 @@ export function getOrchardStatus() {
   const cashGateMet = gameState.cash >= ORCHARD_UNLOCK_CASH_REQUIREMENT;
   const unlocked = milestoneMet;
   const pickRatePerSecond = getOrchardPickRatePerSecond();
+  const orchardBonuses = getOrchardSystemBonuses();
   return {
     unlocked,
     milestoneId: milestone?.id || ORCHARD_UNLOCK_MILESTONE_ID,
@@ -2758,6 +2847,9 @@ export function getOrchardStatus() {
     orchardsOwned: Math.max(0, Math.floor(Number(gameState.orchardsOwned) || 0)),
     cost: getOrchardCost(),
     pickRatePerSecond,
+    capacityBonus: orchardBonuses.capacityBonus,
+    spawnIntervalMultiplier: orchardBonuses.spawnIntervalMultiplier,
+    exportBonusMultiplier: orchardBonuses.exportBonusMultiplier,
   };
 }
 
@@ -2777,7 +2869,7 @@ export function buyTree() {
 export function unlockNextTreeTier() {
   const nextTier = getNextTreeTier();
   const nextTierIndex = gameState.treeTierIndex + 1;
-  const unlockCost = Number(nextTier?.unlockCostCash) || 0;
+  const unlockCost = getEffectiveTreeTierUnlockCost(nextTier);
 
   if (!nextTier || gameState.cash < unlockCost || !isQuestComplete(nextTier.quest)) {
     return false;
@@ -2789,6 +2881,12 @@ export function unlockNextTreeTier() {
   recomputeDerivedStats();
   notifyListeners();
   return true;
+}
+
+export function getEffectiveTreeTierUnlockCost(tier = null) {
+  const targetTier = tier || getNextTreeTier();
+  const baseUnlockCost = Number(targetTier?.unlockCostCash) || 0;
+  return getEffectiveCashCost(baseUnlockCost);
 }
 
 export function isBuyerUnlocked(buyerId) {
