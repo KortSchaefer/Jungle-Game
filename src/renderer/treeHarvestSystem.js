@@ -15,6 +15,7 @@ const DEFAULT_TREE_STATE = Object.freeze({
   orchardPickerAccumulator: 0,
   shakeCooldownSeconds: 35,
   shakeCooldownRemaining: 0,
+  shakeDisabled: false,
 });
 
 const REGION_WIDTH = 100;
@@ -104,6 +105,7 @@ export class TreeHarvestSystem {
       orchardPickerAccumulator: Math.max(0, sanitizeNumber(merged.orchardPickerAccumulator, 0)),
       shakeCooldownSeconds: clamp(sanitizeNumber(merged.shakeCooldownSeconds, DEFAULT_TREE_STATE.shakeCooldownSeconds), 3, 180),
       shakeCooldownRemaining: Math.max(0, sanitizeNumber(merged.shakeCooldownRemaining, 0)),
+      shakeDisabled: Boolean(merged.shakeDisabled),
     };
     this._changed = true;
   }
@@ -126,6 +128,7 @@ export class TreeHarvestSystem {
       orchardPickerAccumulator: this.state.orchardPickerAccumulator,
       shakeCooldownSeconds: this.state.shakeCooldownSeconds,
       shakeCooldownRemaining: this.state.shakeCooldownRemaining,
+      shakeDisabled: this.state.shakeDisabled,
     };
   }
 
@@ -140,6 +143,7 @@ export class TreeHarvestSystem {
     this.state.diamondMultiplier = Math.max(1, sanitizeNumber(modifiers.diamondMultiplier, this.state.diamondMultiplier));
     this.state.monkeyPickerInterval = Math.max(0, sanitizeNumber(modifiers.monkeyPickerInterval, this.state.monkeyPickerInterval));
     this.state.shakeCooldownSeconds = clamp(sanitizeNumber(modifiers.shakeCooldownSeconds, this.state.shakeCooldownSeconds), 3, 180);
+    this.state.shakeDisabled = Boolean(modifiers.shakeDisabled);
     if (this.state.bananasOnTree.length > this.state.maxBananasOnTree) {
       this.state.bananasOnTree = this.state.bananasOnTree.slice(0, this.state.maxBananasOnTree);
     }
@@ -162,6 +166,7 @@ export class TreeHarvestSystem {
       orchardPickerAccumulator: this.state.orchardPickerAccumulator,
       shakeCooldownSeconds: this.state.shakeCooldownSeconds,
       shakeCooldownRemaining: this.state.shakeCooldownRemaining,
+      shakeDisabled: this.state.shakeDisabled,
     };
   }
 
@@ -292,6 +297,9 @@ export class TreeHarvestSystem {
   }
 
   shakeTree() {
+    if (this.state.shakeDisabled) {
+      return { success: false, reason: "disabled", cooldownRemaining: 0 };
+    }
     if (this.state.shakeCooldownRemaining > 0) {
       return { success: false, reason: "cooldown", cooldownRemaining: this.state.shakeCooldownRemaining };
     }

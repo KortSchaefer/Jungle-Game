@@ -4,6 +4,10 @@ export function renderTabPanels() {
       <nav class="top-nav" aria-label="Game sections">
         <button id="toggleUpgradesBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="upgradesView">Upgrades</button>
       </nav>
+      <section id="challengeHudStrip" class="ui-card challenge-hud-strip" aria-live="polite">
+        <p id="challengeHudStatusText">Ascension Challenge: Inactive</p>
+        <p id="challengeHudTimerText">Start a challenge from the Upgrades view.</p>
+      </section>
 
       <section id="mainView" class="main-view" aria-hidden="false">
         <div class="core-panels">
@@ -63,7 +67,10 @@ export function renderTabPanels() {
 
           <div class="ui-card">
             <h3>Tree Harvest Upgrades</h3>
-            <div id="treeHarvestUpgradesList" class="buyers-list"></div>
+            <details id="treeHarvestUpgradesDetails" class="pip-shop-details">
+              <summary>Upgrade List</summary>
+              <div id="treeHarvestUpgradesList" class="buyers-list pip-upgrades-grid"></div>
+            </details>
           </div>
 
           <div class="ui-card">
@@ -225,13 +232,31 @@ export function renderTabPanels() {
         </div>
 
         <div class="ui-card">
-          <h3>CEO Emails</h3>
-          <div id="ceoInboxList" class="buyers-list"></div>
+          <h3>Ascension Challenges</h3>
+          <details id="ascensionDetails" class="achievements-details">
+            <summary>Challenge Hub</summary>
+            <p id="challengeRunSummaryText">No active challenge run.</p>
+            <p id="challengeStartWarningText" class="field-label">Starting a challenge applies temporary constraints and snapshots this run.</p>
+            <div id="challengeObjectivesTracker" class="buyers-list challenge-tracker-list"></div>
+            <div class="compact-actions">
+              <button id="challengeResumeBtn" type="button">Resume</button>
+              <button id="challengeAbandonBtn" type="button">Abandon</button>
+              <button id="challengeCompleteBtn" type="button">Complete</button>
+              <button id="challengeFailBtn" type="button">Fail</button>
+            </div>
+            <div id="challengesList" class="buyers-list challenge-hub-list"></div>
+          </details>
         </div>
 
-        <div class="ui-card">
-          <h3>Upgrade Name Catalog</h3>
-          <div id="upgradeNameCatalog" class="buyers-list"></div>
+        <div id="challengeResultModal" class="modal is-hidden" aria-hidden="true" data-close-challenge-result="true">
+          <div class="modal-content ui-card">
+            <h3>Challenge Result</h3>
+            <p id="challengeResultSummaryText">No recent challenge result.</p>
+            <div id="challengeResultObjectivesList" class="buyers-list"></div>
+            <div class="compact-actions">
+              <button id="closeChallengeResultBtn" type="button">Close</button>
+            </div>
+          </div>
         </div>
       </section>
     </section>

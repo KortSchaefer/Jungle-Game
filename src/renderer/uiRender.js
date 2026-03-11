@@ -9,6 +9,10 @@ import {
   getAutoSellPricePerBanana,
   getActiveContracts,
   getAchievementsStatus,
+  getActiveChallengeRunStatus,
+  getAscensionChallengesStatus,
+  getAscensionRewardsStatus,
+  getChallengeLastResult,
   getCeoEmails,
   getBuyerCooldownRemainingSeconds,
   getBuyerEffectivePricePerBanana,
@@ -44,6 +48,12 @@ import {
   isUpgradePurchased,
   isUpgradeUnlocked,
   prestigeReset,
+  resumeChallengeRun,
+  startChallengeRun,
+  abandonChallengeRun,
+  completeChallengeRun,
+  clearChallengeLastResult,
+  failChallengeRun,
   purchaseTreeHarvestUpgrade,
   purchasePipUpgrade,
   purchaseUpgrade,
@@ -66,6 +76,7 @@ import { getTreeTextures, sanitizeGraphicsMode } from "./textureAssets.js";
 import { fetchLeaderboard, fetchLeaderboardMe, startLeaderboardSession, submitLeaderboardStats } from "./leaderboardApi.js";
 import { canChangeDisplayName, completeRegistration, loadUISettings, setUISettings, updateDisplayName } from "./settings.js";
 import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
+import { ascensionRewardById } from "./ascensionChallenges.js";
 import { TreeHarvestView } from "./treeHarvestView.js";
 import { renderCeoPanel } from "./components/ceoPanel.js";
 import { renderHudBar } from "./components/hudBar.js";
@@ -182,6 +193,16 @@ function setDisabledIfChanged(element, disabled) {
   const next = Boolean(disabled);
   if (element.disabled !== next) {
     element.disabled = next;
+  }
+}
+
+function setAttributeIfChanged(element, attribute, value) {
+  if (!element) {
+    return;
+  }
+  const next = String(value);
+  if (element.getAttribute(attribute) !== next) {
+    element.setAttribute(attribute, next);
   }
 }
 
@@ -313,6 +334,18 @@ export function mountUI(container) {
     pipSpentText: container.querySelector("#pipSpentText"),
     pipShopSummaryText: container.querySelector("#pipShopSummaryText"),
     pipUpgradesList: container.querySelector("#pipUpgradesList"),
+    challengeRunSummaryText: container.querySelector("#challengeRunSummaryText"),
+    challengeStartWarningText: container.querySelector("#challengeStartWarningText"),
+    challengeObjectivesTracker: container.querySelector("#challengeObjectivesTracker"),
+    challengesList: container.querySelector("#challengesList"),
+    challengeResumeBtn: container.querySelector("#challengeResumeBtn"),
+    challengeAbandonBtn: container.querySelector("#challengeAbandonBtn"),
+    challengeCompleteBtn: container.querySelector("#challengeCompleteBtn"),
+    challengeFailBtn: container.querySelector("#challengeFailBtn"),
+    challengeResultModal: container.querySelector("#challengeResultModal"),
+    challengeResultSummaryText: container.querySelector("#challengeResultSummaryText"),
+    challengeResultObjectivesList: container.querySelector("#challengeResultObjectivesList"),
+    closeChallengeResultBtn: container.querySelector("#closeChallengeResultBtn"),
     prestigeCountText: container.querySelector("#prestigeCountText"),
     prestigeBonusText: container.querySelector("#prestigeBonusText"),
     prestigeUnlockText: container.querySelector("#prestigeUnlockText"),
@@ -380,6 +413,9 @@ export function mountUI(container) {
     mainView: container.querySelector("#mainView"),
     toggleUpgradesBtn: container.querySelector("#toggleUpgradesBtn"),
     upgradesView: container.querySelector("#upgradesView"),
+    challengeHudStrip: container.querySelector("#challengeHudStrip"),
+    challengeHudStatusText: container.querySelector("#challengeHudStatusText"),
+    challengeHudTimerText: container.querySelector("#challengeHudTimerText"),
   };
 
   let numberFormatMode = settings.numberFormat;
@@ -387,6 +423,7 @@ export function mountUI(container) {
   let debugPanelVisible = false;
   let inspectorPanelVisible = false;
   let treeDebugVisible = false;
+  let dismissedChallengeResultAt = 0;
   const appShell = container.querySelector(".app-shell");
   const applyThemeSettings = (sourceSettings = settings) => {
     const topBarTheme = String(sourceSettings.topBarTheme || "forest");
@@ -597,6 +634,25 @@ export function mountUI(container) {
     elements.customizeModal.classList.add("is-hidden");
   }
 
+  function openChallengeResultModal() {
+    if (!elements.challengeResultModal) {
+      return;
+    }
+    elements.challengeResultModal.classList.remove("is-hidden");
+    elements.challengeResultModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeChallengeResultModal() {
+    if (!elements.challengeResultModal) {
+      return;
+    }
+    elements.challengeResultModal.classList.add("is-hidden");
+    elements.challengeResultModal.setAttribute("aria-hidden", "true");
+    const result = getChallengeLastResult();
+    dismissedChallengeResultAt = Math.max(dismissedChallengeResultAt, Number(result?.completedAt) || 0);
+    clearChallengeLastResult();
+  }
+
   elements.openSettingsBtn.addEventListener("click", openSettingsModal);
   if (elements.openCustomizeBtn) {
     elements.openCustomizeBtn.addEventListener("click", openCustomizeModal);
@@ -635,6 +691,17 @@ export function mountUI(container) {
       elements.leaderboardModal.classList.add("is-hidden");
     }
   });
+  if (elements.closeChallengeResultBtn) {
+    elements.closeChallengeResultBtn.addEventListener("click", closeChallengeResultModal);
+  }
+  if (elements.challengeResultModal) {
+    elements.challengeResultModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.dataset.closeChallengeResult === "true") {
+        closeChallengeResultModal();
+      }
+    });
+  }
 
   elements.companyNameInput.addEventListener("change", () => {
     const companyName = elements.companyNameInput.value.trim();
@@ -938,6 +1005,62 @@ export function mountUI(container) {
     });
   }
 
+  if (elements.challengesList) {
+    elements.challengesList.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const button = target.closest("button[data-challenge-id]");
+      if (!button) {
+        return;
+      }
+      const challengeId = button.dataset.challengeId;
+      if (challengeId) {
+        const challenge = getAscensionChallengesStatus().find((item) => item.id === challengeId);
+        const ruleText = challenge && Array.isArray(challenge.ruleIds) && challenge.ruleIds.length
+          ? challenge.ruleIds.map((ruleId) => formatChallengeRuleLabel(ruleId)).join(", ")
+          : "default rules";
+        const shouldStart = window.confirm(
+          `Start "${challenge?.name || challengeId}"?\n\nThis snapshots your current run, applies temporary challenge constraints, and disables normal progression flow until completion/abandon.\n\nRules: ${ruleText}`
+        );
+        if (shouldStart) {
+          startChallengeRun(challengeId);
+        }
+      }
+    });
+  }
+
+  if (elements.challengeResumeBtn) {
+    elements.challengeResumeBtn.addEventListener("click", () => {
+      resumeChallengeRun();
+    });
+  }
+
+  if (elements.challengeAbandonBtn) {
+    elements.challengeAbandonBtn.addEventListener("click", () => {
+      const active = getActiveChallengeRunStatus();
+      const shouldAbandon = window.confirm(
+        `Abandon "${active?.challengeName || "active challenge"}" and restore pre-challenge state?`
+      );
+      if (shouldAbandon) {
+        abandonChallengeRun();
+      }
+    });
+  }
+
+  if (elements.challengeCompleteBtn) {
+    elements.challengeCompleteBtn.addEventListener("click", () => {
+      completeChallengeRun();
+    });
+  }
+
+  if (elements.challengeFailBtn) {
+    elements.challengeFailBtn.addEventListener("click", () => {
+      failChallengeRun();
+    });
+  }
+
   const buyersList = container.querySelector("#buyersList");
   const buyerElements = new Map();
 
@@ -1103,12 +1226,127 @@ export function mountUI(container) {
     }
   });
 
+  const challengeCardElements = new Map();
+  const challengeObjectiveElements = new Map();
+  const challengeDifficultyLabelByCategory = {
+    Starter: "Easy",
+    Core: "Normal",
+    Advanced: "Hard",
+    Expert: "Expert",
+  };
+  const challengeRuleLabels = {
+    no_orchard_bonus: "No Orchard bonus",
+    reduced_export_value: "Reduced export value",
+    tighter_lane_capacity: "Tighter lane capacity",
+    contract_focus: "Contract-focused scoring",
+    reduced_click_yield: "Reduced click yield",
+    slower_spawn_rate: "Slower banana spawn",
+    disable_prestige: "Prestige disabled during run",
+  };
+
+  const formatChallengeRuleLabel = (ruleId) => challengeRuleLabels[ruleId] || String(ruleId || "rule").replace(/_/g, " ");
+
+  const getChallengeDifficultyLabel = (challenge) =>
+    challengeDifficultyLabelByCategory[challenge.category] || (challenge.timeLimitMs && challenge.timeLimitMs <= 8 * 60 * 1000 ? "Hard" : "Normal");
+
+  const ensureChallengeCard = (challengeId) => {
+    if (!elements.challengesList) {
+      return null;
+    }
+    const existing = challengeCardElements.get(challengeId);
+    if (existing) {
+      return existing;
+    }
+
+    const card = document.createElement("div");
+    card.className = "buyer-card challenge-card";
+    card.dataset.challengeId = challengeId;
+
+    const statusRow = document.createElement("div");
+    statusRow.className = "challenge-status-row";
+
+    const title = document.createElement("p");
+    title.className = "buyer-name";
+    statusRow.appendChild(title);
+
+    const statusChip = document.createElement("span");
+    statusChip.className = "challenge-status-chip status-available";
+    statusRow.appendChild(statusChip);
+
+    const description = document.createElement("p");
+    description.className = "field-label";
+
+    const metadata = document.createElement("div");
+    metadata.className = "challenge-meta-list";
+    const difficulty = document.createElement("p");
+    const rules = document.createElement("p");
+    const objectives = document.createElement("p");
+    const rewards = document.createElement("p");
+    const best = document.createElement("p");
+    const unlock = document.createElement("p");
+    metadata.appendChild(difficulty);
+    metadata.appendChild(rules);
+    metadata.appendChild(objectives);
+    metadata.appendChild(rewards);
+    metadata.appendChild(best);
+    metadata.appendChild(unlock);
+
+    const startBtn = document.createElement("button");
+    startBtn.type = "button";
+    startBtn.dataset.challengeId = challengeId;
+
+    card.appendChild(statusRow);
+    card.appendChild(description);
+    card.appendChild(metadata);
+    card.appendChild(startBtn);
+    elements.challengesList.appendChild(card);
+
+    const refs = { card, title, statusChip, description, difficulty, rules, objectives, rewards, best, unlock, startBtn };
+    challengeCardElements.set(challengeId, refs);
+    return refs;
+  };
+
+  const ensureChallengeObjective = (objectiveId) => {
+    if (!elements.challengeObjectivesTracker) {
+      return null;
+    }
+    const existing = challengeObjectiveElements.get(objectiveId);
+    if (existing) {
+      return existing;
+    }
+    const card = document.createElement("div");
+    card.className = "buyer-card challenge-objective-item";
+    card.dataset.challengeObjectiveId = objectiveId;
+    const head = document.createElement("div");
+    head.className = "challenge-objective-head";
+    const name = document.createElement("span");
+    const value = document.createElement("span");
+    head.appendChild(name);
+    head.appendChild(value);
+    const progressWrap = document.createElement("div");
+    progressWrap.className = "progress-wrap";
+    const progressFill = document.createElement("div");
+    progressFill.className = "progress-fill";
+    progressWrap.appendChild(progressFill);
+    card.appendChild(head);
+    card.appendChild(progressWrap);
+    elements.challengeObjectivesTracker.appendChild(card);
+    const refs = { card, name, value, progressFill };
+    challengeObjectiveElements.set(objectiveId, refs);
+    return refs;
+  };
+
+  getAscensionChallengesStatus().forEach((challenge) => {
+    ensureChallengeCard(challenge.id);
+  });
+
   const renderUI = (state) => {
     const fmt = (value) => formatGameNumber(value, numberFormatMode);
 
     const bananasPerSecond = getTotalBananasPerSecond();
     const breakdown = getProductionBreakdown();
     const statBreakdown = getStatBreakdown();
+    const ascensionRewards = getAscensionRewardsStatus();
     const treeHarvestSnapshot = getTreeHarvestSnapshot();
     const treeHarvestUpgrades = getTreeHarvestUpgradesStatus();
     const currentTier = getCurrentTreeTier();
@@ -1127,6 +1365,10 @@ export function mountUI(container) {
     setTextIfChanged(elements.treesText, `Trees Owned: ${fmt(state.treesOwned)}`);
     setTextIfChanged(elements.treeRateText, `Harvest power: ${fmt(state.productionMultiplier)}x`);
     if (inspectorPanelVisible) {
+      const challengeRuleIds = Array.from(new Set((statBreakdown.challenge.rulesApplied || []).map((modifier) => modifier.sourceId))).join(", ");
+      const challengeLabel = statBreakdown.challenge.active
+        ? `Challenge ${fmt(statBreakdown.sources.challengeProduction)}x prod, ${fmt(statBreakdown.sources.challengeExportPrice)}x export [${challengeRuleIds || "none"}]`
+        : "Challenge 1x (inactive)";
       setTextIfChanged(elements.inspectorProductionText, `Production: ${fmt(statBreakdown.final.productionMultiplier)}x`);
       setTextIfChanged(elements.inspectorClickText, `Click: ${fmt(statBreakdown.final.clickMultiplier)}x`);
       setTextIfChanged(elements.inspectorExportText, `Export: ${fmt(statBreakdown.final.exportPriceMultiplier)}x`);
@@ -1141,7 +1383,7 @@ export function mountUI(container) {
       );
       setTextIfChanged(
         elements.inspectorSourcesText,
-        `Sources: Prestige ${fmt(statBreakdown.sources.prestigeProduction)}x | PIP ${fmt(statBreakdown.sources.pipProduction)}x | Achievements ${fmt(statBreakdown.sources.achievementProduction)}x | Research rows ${fmt(statBreakdown.sources.researchRowProduction)}x | Evolution ${fmt(statBreakdown.sources.evolutionProduction)}x | CEO ${fmt(statBreakdown.sources.ceoGlobal)}x`
+        `Sources: Prestige ${fmt(statBreakdown.sources.prestigeProduction)}x | PIP ${fmt(statBreakdown.sources.pipProduction)}x | Achievements ${fmt(statBreakdown.sources.achievementProduction)}x | Research rows ${fmt(statBreakdown.sources.researchRowProduction)}x | Evolution ${fmt(statBreakdown.sources.evolutionProduction)}x | CEO ${fmt(statBreakdown.sources.ceoGlobal)}x | Ascension ${fmt(statBreakdown.sources.rewardProduction)}x prod, ${fmt(statBreakdown.sources.rewardExportPrice)}x export | Rewards ${fmt(ascensionRewards.unlockedRewardIds.length)} | ${challengeLabel}`
       );
     }
     const treeTextures = getTreeTextures(graphicsMode);
@@ -1152,6 +1394,11 @@ export function mountUI(container) {
     }
     treeHarvestView.setTreeTierIndex(state.treeTierIndex);
     treeHarvestView.render(treeHarvestSnapshot);
+    if (elements.shakeTreeBtn) {
+      const shakeBlocked = Boolean(treeHarvestSnapshot.shakeDisabled);
+      setDisabledIfChanged(elements.shakeTreeBtn, shakeBlocked);
+      setTextIfChanged(elements.shakeTreeBtn, shakeBlocked ? "Shake Disabled" : "Shake Tree");
+    }
     treeDebugVisible = Boolean(settings.treeDebugEnabled);
     elements.treeDebugPanel.classList.toggle("is-hidden", !treeDebugVisible);
     if (treeDebugVisible) {
@@ -1429,6 +1676,191 @@ export function mountUI(container) {
         })
         .join("")
     );
+
+    const challengeStatuses = getAscensionChallengesStatus();
+    const activeChallenge = getActiveChallengeRunStatus();
+    const challengeLastResult = getChallengeLastResult();
+    const activeObjectiveCount = activeChallenge ? activeChallenge.objectives.filter((objective) => objective.complete).length : 0;
+    if (elements.challengeHudStrip && elements.challengeHudStatusText && elements.challengeHudTimerText) {
+      elements.challengeHudStrip.classList.toggle("is-active", Boolean(activeChallenge));
+      elements.challengeHudStrip.classList.toggle("is-warning", !activeChallenge && challengeLastResult?.status === "failed");
+      if (activeChallenge) {
+        setTextIfChanged(
+          elements.challengeHudStatusText,
+          `Ascension Challenge: ${activeChallenge.challengeName} (${activeChallenge.rankPreview})`
+        );
+        const timeLimitText = activeChallenge.timeLimitMs > 0 ? ` / ${formatRemainingMs(activeChallenge.timeLimitMs)}` : "";
+        setTextIfChanged(
+          elements.challengeHudTimerText,
+          `Time ${formatRemainingMs(activeChallenge.elapsedMs)}${timeLimitText} | Objectives ${fmt(activeObjectiveCount)} / ${fmt(activeChallenge.objectives.length)}`
+        );
+      } else if (challengeLastResult?.status === "failed") {
+        setTextIfChanged(elements.challengeHudStatusText, "Ascension Challenge: Last run failed");
+        setTextIfChanged(elements.challengeHudTimerText, "Retry from Upgrades to earn permanent rewards.");
+      } else {
+        setTextIfChanged(elements.challengeHudStatusText, "Ascension Challenge: Inactive");
+        setTextIfChanged(elements.challengeHudTimerText, "Start a challenge from the Upgrades view.");
+      }
+    }
+    if (elements.challengeRunSummaryText) {
+      if (!activeChallenge) {
+        setTextIfChanged(elements.challengeRunSummaryText, "No active challenge run.");
+      } else {
+        const timeLimitText = activeChallenge.timeLimitMs > 0 ? ` / ${formatRemainingMs(activeChallenge.timeLimitMs)}` : "";
+        setTextIfChanged(
+          elements.challengeRunSummaryText,
+          `Active: ${activeChallenge.challengeName} | Time ${formatRemainingMs(activeChallenge.elapsedMs)}${timeLimitText} | Rank ${activeChallenge.rankPreview} | Score ${fmt(activeChallenge.score)} | Objectives ${fmt(activeObjectiveCount)} / ${fmt(activeChallenge.objectives.length)}`
+        );
+      }
+    }
+    if (elements.challengeStartWarningText) {
+      setTextIfChanged(
+        elements.challengeStartWarningText,
+        activeChallenge
+          ? "Challenge constraints are active. Complete, fail, or abandon to return to normal progression."
+          : "Starting a challenge snapshots this run and applies temporary constraints until run end."
+      );
+    }
+
+    if (elements.challengeObjectivesTracker) {
+      if (!activeChallenge) {
+        challengeObjectiveElements.forEach((refs) => {
+          refs.card.classList.add("is-hidden");
+        });
+        if (!elements.challengeObjectivesTracker.querySelector(".challenge-objective-empty")) {
+          const empty = document.createElement("p");
+          empty.className = "challenge-objective-empty";
+          empty.textContent = "Start a challenge to track objectives here.";
+          elements.challengeObjectivesTracker.appendChild(empty);
+        }
+      } else {
+        const empty = elements.challengeObjectivesTracker.querySelector(".challenge-objective-empty");
+        if (empty) {
+          empty.remove();
+        }
+        const activeObjectiveIds = new Set();
+        activeChallenge.objectives.forEach((objective) => {
+          activeObjectiveIds.add(objective.id);
+          const refs = ensureChallengeObjective(objective.id);
+          const pct = (objective.progressPct * 100).toFixed(1);
+          refs.card.classList.remove("is-hidden");
+          refs.card.classList.toggle("is-achievement-unlocked", objective.complete);
+          setTextIfChanged(refs.name, objective.id.replace(/_/g, " "));
+          setTextIfChanged(refs.value, `${fmt(objective.progress)} / ${fmt(objective.target)} (${pct}%)`);
+          setWidthIfChanged(refs.progressFill, pct);
+        });
+        challengeObjectiveElements.forEach((refs, objectiveId) => {
+          if (!activeObjectiveIds.has(objectiveId)) {
+            refs.card.classList.add("is-hidden");
+          }
+        });
+      }
+    }
+
+    if (elements.challengesList) {
+      const rankOrder = { Bronze: 0, Silver: 1, Gold: 2 };
+      challengeStatuses.forEach((challenge) => {
+        const refs = ensureChallengeCard(challenge.id);
+        if (!refs) {
+          return;
+        }
+        const history = challenge.history;
+        const historyText = history
+          ? `Best: ${history.bestRank || "-"} | Best Time: ${history.bestTimeMs ? formatRemainingMs(history.bestTimeMs) : "-"} | Clears: ${fmt(history.completions)}`
+          : "Best: - | Best Time: - | Clears: 0";
+        const rewardText = (challenge.rewardPreview || []).length
+          ? [...challenge.rewardPreview]
+              .sort((a, b) => (rankOrder[a.rank] ?? 99) - (rankOrder[b.rank] ?? 99))
+              .map((rankSet) => {
+                const rewards = Array.isArray(rankSet.rewards) ? rankSet.rewards : [];
+                if (!rewards.length) {
+                  return `${rankSet.rank}: None`;
+                }
+                return `${rankSet.rank}: ${rewards.map((reward) => `${reward.unlocked ? "[Owned]" : "[ ]"} ${reward.title}`).join(", ")}`;
+              })
+              .join(" | ")
+          : "None";
+        const objectivesText = Array.isArray(challenge.objectives)
+          ? challenge.objectives.map((objective) => `${objective.id.replace(/_/g, " ")} ${fmt(objective.target)}`).join(" | ")
+          : "-";
+        const rulesText = Array.isArray(challenge.ruleIds) && challenge.ruleIds.length
+          ? challenge.ruleIds.map((ruleId) => formatChallengeRuleLabel(ruleId)).join(", ")
+          : "Standard rules";
+        const thresholds = challenge.rankThresholds || {};
+        const thresholdText = `Gold <= ${formatRemainingMs(thresholds.goldMaxElapsedMs || 0)}, Silver <= ${formatRemainingMs(
+          thresholds.silverMaxElapsedMs || 0
+        )}, Bronze <= ${formatRemainingMs(thresholds.bronzeMaxElapsedMs || challenge.timeLimitMs || 0)}`;
+        const disabled = !challenge.unlocked || Boolean(activeChallenge);
+        const buttonLabel = challenge.active ? "Active" : "Start Challenge";
+        const challengeState = challenge.active
+          ? "active"
+          : challenge.unlocked
+            ? (challengeLastResult?.challengeId === challenge.id && challengeLastResult?.status === "failed" ? "failed" : (history?.completions ? "completed" : "available"))
+            : "locked";
+        setTextIfChanged(refs.title, `${challenge.category}: ${challenge.name}`);
+        setTextIfChanged(refs.description, challenge.description);
+        setTextIfChanged(refs.difficulty, `Difficulty: ${getChallengeDifficultyLabel(challenge)}`);
+        setTextIfChanged(refs.rules, `Rules: ${rulesText}`);
+        setTextIfChanged(refs.objectives, `Objectives: ${objectivesText}`);
+        setTextIfChanged(refs.rewards, `Rewards: ${rewardText}`);
+        setTextIfChanged(refs.best, `${historyText} | Ranks: ${thresholdText}`);
+        setTextIfChanged(refs.unlock, challenge.unlocked ? "Unlock: Available" : `Unlock: ${formatRequirement(challenge.unlockCondition, fmt)}`);
+        setTextIfChanged(refs.startBtn, buttonLabel);
+        setDisabledIfChanged(refs.startBtn, disabled);
+        refs.card.classList.toggle("is-locked", challengeState === "locked");
+        refs.card.classList.toggle("is-active", challengeState === "active");
+        refs.card.classList.toggle("is-failed", challengeState === "failed");
+        refs.statusChip.className = `challenge-status-chip status-${challengeState}`;
+        setTextIfChanged(refs.statusChip, challengeState.toUpperCase());
+      });
+    }
+
+    if (elements.challengeResumeBtn) {
+      setDisabledIfChanged(elements.challengeResumeBtn, !activeChallenge || activeChallenge.status === "active");
+    }
+    if (elements.challengeAbandonBtn) {
+      setDisabledIfChanged(elements.challengeAbandonBtn, !activeChallenge);
+    }
+    if (elements.challengeCompleteBtn) {
+      setDisabledIfChanged(elements.challengeCompleteBtn, !activeChallenge || !activeChallenge.allObjectivesComplete);
+    }
+    if (elements.challengeFailBtn) {
+      setDisabledIfChanged(elements.challengeFailBtn, !activeChallenge);
+    }
+
+    if (challengeLastResult && (Number(challengeLastResult.completedAt) || 0) > dismissedChallengeResultAt) {
+      const challengeDef = challengeStatuses.find((challenge) => challenge.id === challengeLastResult.challengeId);
+      const resultTitle = challengeDef ? challengeDef.name : challengeLastResult.challengeId;
+      const rewardsGranted = Array.isArray(challengeLastResult.rewardsGranted) ? challengeLastResult.rewardsGranted : [];
+      const rewardTitles = rewardsGranted
+        .map((rewardId) => ascensionRewardById.get(rewardId)?.title || rewardId)
+        .join(", ");
+      const rewardsText = rewardsGranted.length ? ` | New Rewards: ${rewardTitles}` : "";
+      setTextIfChanged(
+        elements.challengeResultSummaryText,
+        `${resultTitle}: ${challengeLastResult.status.toUpperCase()} | Rank ${challengeLastResult.rank} | Time ${formatRemainingMs(
+          challengeLastResult.elapsedMs
+        )} | Score ${fmt(challengeLastResult.score)}${rewardsText}`
+      );
+      const resultObjectives = challengeDef?.objectives || [];
+      setHtmlIfChanged(
+        elements.challengeResultObjectivesList,
+        resultObjectives.length
+          ? resultObjectives
+              .map((objective) => {
+                const progress = Math.max(0, Number(challengeLastResult.objectiveProgress?.[objective.id]) || 0);
+                const target = Math.max(0, Number(objective.target) || 0);
+                const pct = target <= 0 ? 100 : Math.max(0, Math.min(100, (progress / target) * 100));
+                return `<div class="buyer-card">
+              <p class="buyer-name">${objective.id.replace(/_/g, " ")}</p>
+              <p>${fmt(progress)} / ${fmt(target)} (${pct.toFixed(1)}%)</p>
+            </div>`;
+              })
+              .join("")
+          : "<p>No objective breakdown available.</p>"
+      );
+      openChallengeResultModal();
+    }
 
     const ceo = getCeoLevelProgress(state.totalBananasEarned);
     setTextIfChanged(elements.ceoLevelText, `Level ${ceo.level}`);

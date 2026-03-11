@@ -3,10 +3,27 @@ import { farmEvolutions } from "./tiers.js";
 import { researchTreeNodes } from "./researchTree.js";
 import { achievements } from "./achievements.js";
 import { TreeHarvestSystem, getDefaultTreeState } from "./treeHarvestSystem.js";
+import {
+  ascensionChallenges,
+  ascensionChallengeById,
+  ascensionRewardById,
+  buildDefaultObjectiveProgress,
+  CHALLENGE_RUN_STATUS,
+  getDefaultActiveChallengeRun,
+  getDefaultChallengeHistory,
+  getDefaultChallengeLastResult,
+  getDefaultChallengeRewardsUnlocked,
+  getRankIndex,
+  getRewardsForChallengeRank,
+  sanitizeActiveChallengeRun,
+  sanitizeChallengeHistory,
+  sanitizeChallengeLastResult,
+  sanitizeChallengeRewardsUnlocked,
+} from "./ascensionChallenges.js";
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 8;
+export const GAME_STATE_SCHEMA_VERSION = 9;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
@@ -39,6 +56,79 @@ const AUTO_EXPORT_UNLOCK_CASH = 20_000;
 
 let firstTickAfterLoadPending = true;
 let lastLoggedBananasForDebug = 0;
+
+const CHALLENGE_MODIFIER_OPS = Object.freeze({
+  mul: "mul",
+  add: "add",
+  set: "set",
+  min: "min",
+  max: "max",
+});
+
+const CHALLENGE_MODIFIER_DEFAULTS = Object.freeze({
+  productionMultiplier: 1,
+  clickMultiplier: 1,
+  exportPriceMultiplier: 1,
+  exportCooldownMultiplier: 1,
+  clickYieldMultiplier: 1,
+  spawnIntervalMultiplier: 1,
+  maxBananasAdd: 0,
+  workerPickRateMultiplier: 1,
+  workerOutputMultiplier: 1,
+  orchardPickRateMultiplier: 1,
+  orchardCapacityMultiplier: 1,
+  orchardSpawnIntervalMultiplier: 1,
+  orchardExportMultiplier: 1,
+  shippingCapacityMultiplier: 1,
+  researchPointMultiplier: 1,
+  shakeEnabled: true,
+  offlineGainsEnabled: true,
+  prestigeEnabled: true,
+});
+
+const CHALLENGE_RULE_MODIFIERS = Object.freeze({
+  no_workers: [
+    { stat: "workerPickRateMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 0, sourceId: "no_workers", category: "constraint" },
+    { stat: "workerOutputMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 0, sourceId: "no_workers", category: "constraint" },
+  ],
+  no_orchards: [
+    { stat: "orchardPickRateMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 0, sourceId: "no_orchards", category: "constraint" },
+    { stat: "orchardCapacityMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 0, sourceId: "no_orchards", category: "constraint" },
+    { stat: "orchardSpawnIntervalMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 1, sourceId: "no_orchards", category: "constraint" },
+    { stat: "orchardExportMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 1, sourceId: "no_orchards", category: "constraint" },
+  ],
+  no_orchard_bonus: [
+    { stat: "orchardPickRateMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 0, sourceId: "no_orchard_bonus", category: "constraint" },
+    { stat: "orchardCapacityMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 0, sourceId: "no_orchard_bonus", category: "constraint" },
+    { stat: "orchardSpawnIntervalMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 1, sourceId: "no_orchard_bonus", category: "constraint" },
+    { stat: "orchardExportMultiplier", op: CHALLENGE_MODIFIER_OPS.set, value: 1, sourceId: "no_orchard_bonus", category: "constraint" },
+  ],
+  reduced_export_value: [
+    { stat: "exportPriceMultiplier", op: CHALLENGE_MODIFIER_OPS.mul, value: 0.7, sourceId: "reduced_export_value", category: "economy" },
+  ],
+  slower_spawn_rate: [
+    { stat: "spawnIntervalMultiplier", op: CHALLENGE_MODIFIER_OPS.mul, value: 1.35, sourceId: "slower_spawn_rate", category: "harvest" },
+  ],
+  disabled_shake: [
+    { stat: "shakeEnabled", op: CHALLENGE_MODIFIER_OPS.set, value: false, sourceId: "disabled_shake", category: "constraint" },
+  ],
+  no_offline_gains: [
+    { stat: "offlineGainsEnabled", op: CHALLENGE_MODIFIER_OPS.set, value: false, sourceId: "no_offline_gains", category: "constraint" },
+  ],
+  disable_prestige: [
+    { stat: "prestigeEnabled", op: CHALLENGE_MODIFIER_OPS.set, value: false, sourceId: "disable_prestige", category: "constraint" },
+  ],
+  reduced_click_yield: [
+    { stat: "clickYieldMultiplier", op: CHALLENGE_MODIFIER_OPS.mul, value: 0.8, sourceId: "reduced_click_yield", category: "harvest" },
+  ],
+  tighter_lane_capacity: [
+    { stat: "shippingCapacityMultiplier", op: CHALLENGE_MODIFIER_OPS.mul, value: 0.75, sourceId: "tighter_lane_capacity", category: "export" },
+  ],
+  contract_focus: [
+    { stat: "exportCooldownMultiplier", op: CHALLENGE_MODIFIER_OPS.mul, value: 0.85, sourceId: "contract_focus", category: "export" },
+    { stat: "productionMultiplier", op: CHALLENGE_MODIFIER_OPS.mul, value: 0.9, sourceId: "contract_focus", category: "tradeoff" },
+  ],
+});
 
 const TREE_HARVEST_UPGRADES = Object.freeze([
   {
@@ -538,6 +628,10 @@ const DEFAULT_STATE = Object.freeze({
   pipSpentTotal: 0,
   pipRespecCount: 0,
   prestigeCount: 0,
+  activeChallengeRun: getDefaultActiveChallengeRun(),
+  challengeHistory: getDefaultChallengeHistory(),
+  challengeRewardsUnlocked: getDefaultChallengeRewardsUnlocked(),
+  challengeLastResult: getDefaultChallengeLastResult(),
   lastSaveTimestamp: Date.now(),
 });
 
@@ -634,6 +728,407 @@ function isRequirementMet(requirement, state = gameState) {
   }
 
   return false;
+}
+
+function applyNormalizedModifierValue(currentValue, modifier) {
+  const safeModifier = modifier && typeof modifier === "object" ? modifier : null;
+  if (!safeModifier) {
+    return currentValue;
+  }
+  const op = safeModifier.op;
+  if (op === CHALLENGE_MODIFIER_OPS.mul) {
+    return Number(currentValue) * Number(safeModifier.value);
+  }
+  if (op === CHALLENGE_MODIFIER_OPS.add) {
+    return Number(currentValue) + Number(safeModifier.value);
+  }
+  if (op === CHALLENGE_MODIFIER_OPS.set) {
+    return safeModifier.value;
+  }
+  if (op === CHALLENGE_MODIFIER_OPS.min) {
+    return Math.min(Number(currentValue), Number(safeModifier.value));
+  }
+  if (op === CHALLENGE_MODIFIER_OPS.max) {
+    return Math.max(Number(currentValue), Number(safeModifier.value));
+  }
+  return currentValue;
+}
+
+function resolveChallengeContext() {
+  const run = gameState.activeChallengeRun;
+  if (!run || run.status !== CHALLENGE_RUN_STATUS.active || !ascensionChallengeById.has(run.challengeId)) {
+    return {
+      active: false,
+      challengeId: null,
+      modifiersApplied: [],
+      resolved: { ...CHALLENGE_MODIFIER_DEFAULTS },
+    };
+  }
+
+  const ruleIds = Array.isArray(run.appliedRuleIds) ? run.appliedRuleIds : [];
+  const resolved = { ...CHALLENGE_MODIFIER_DEFAULTS };
+  const modifiersApplied = [];
+
+  ruleIds.forEach((ruleId) => {
+    const ruleModifiers = Array.isArray(CHALLENGE_RULE_MODIFIERS[ruleId]) ? CHALLENGE_RULE_MODIFIERS[ruleId] : [];
+    ruleModifiers.forEach((modifier) => {
+      if (!modifier || typeof modifier !== "object" || !(modifier.stat in resolved)) {
+        return;
+      }
+      const nextValue = applyNormalizedModifierValue(resolved[modifier.stat], modifier);
+      resolved[modifier.stat] = nextValue;
+      modifiersApplied.push({
+        stat: modifier.stat,
+        op: modifier.op,
+        value: modifier.value,
+        sourceId: modifier.sourceId || ruleId,
+        category: modifier.category || "challenge",
+      });
+    });
+  });
+
+  resolved.productionMultiplier = Math.max(0, Number(resolved.productionMultiplier) || 0);
+  resolved.clickMultiplier = Math.max(0, Number(resolved.clickMultiplier) || 0);
+  resolved.exportPriceMultiplier = Math.max(0, Number(resolved.exportPriceMultiplier) || 0);
+  resolved.exportCooldownMultiplier = Math.max(0.1, Number(resolved.exportCooldownMultiplier) || 0.1);
+  resolved.clickYieldMultiplier = Math.max(0, Number(resolved.clickYieldMultiplier) || 0);
+  resolved.spawnIntervalMultiplier = Math.max(0.1, Number(resolved.spawnIntervalMultiplier) || 1);
+  resolved.maxBananasAdd = Math.floor(Number(resolved.maxBananasAdd) || 0);
+  resolved.workerPickRateMultiplier = Math.max(0, Number(resolved.workerPickRateMultiplier) || 0);
+  resolved.workerOutputMultiplier = Math.max(0, Number(resolved.workerOutputMultiplier) || 0);
+  resolved.orchardPickRateMultiplier = Math.max(0, Number(resolved.orchardPickRateMultiplier) || 0);
+  resolved.orchardCapacityMultiplier = Math.max(0, Number(resolved.orchardCapacityMultiplier) || 0);
+  resolved.orchardSpawnIntervalMultiplier = Math.max(0.1, Number(resolved.orchardSpawnIntervalMultiplier) || 1);
+  resolved.orchardExportMultiplier = Math.max(0, Number(resolved.orchardExportMultiplier) || 0);
+  resolved.shippingCapacityMultiplier = Math.max(0, Number(resolved.shippingCapacityMultiplier) || 0);
+  resolved.researchPointMultiplier = Math.max(0, Number(resolved.researchPointMultiplier) || 0);
+  resolved.shakeEnabled = Boolean(resolved.shakeEnabled);
+  resolved.offlineGainsEnabled = Boolean(resolved.offlineGainsEnabled);
+  resolved.prestigeEnabled = Boolean(resolved.prestigeEnabled);
+
+  return {
+    active: true,
+    challengeId: run.challengeId,
+    modifiersApplied,
+    resolved,
+  };
+}
+
+function isChallengeUnlocked(challenge) {
+  return isRequirementMet(challenge?.unlockCondition);
+}
+
+function cloneSerializable(value) {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createChallengePreRunSnapshot() {
+  const snapshot = cloneSerializable(gameState);
+  snapshot.activeChallengeRun = null;
+  snapshot.challengeHistory = cloneSerializable(gameState.challengeHistory || {});
+  snapshot.challengeRewardsUnlocked = cloneSerializable(gameState.challengeRewardsUnlocked || []);
+  return snapshot;
+}
+
+function prepareStateForChallengeRun() {
+  const preservedMeta = {
+    pip: gameState.pip,
+    purchasedPipUpgrades: cloneSerializable(gameState.purchasedPipUpgrades || {}),
+    pipSpentTotal: gameState.pipSpentTotal,
+    pipRespecCount: gameState.pipRespecCount,
+    prestigeCount: gameState.prestigeCount,
+    challengeHistory: cloneSerializable(gameState.challengeHistory || {}),
+    challengeRewardsUnlocked: cloneSerializable(gameState.challengeRewardsUnlocked || []),
+  };
+
+  Object.assign(gameState, DEFAULT_STATE, preservedMeta, {
+    schemaVersion: GAME_STATE_SCHEMA_VERSION,
+    lastTickTime: Date.now(),
+    lastSaveTimestamp: Date.now(),
+    lastContractGenerationTime: Date.now(),
+    nextEventRollTimestamp: Date.now() + 180_000,
+    nextCeoEmailRollTimestamp: Date.now() + getRandomCeoEmailDelayMs(),
+  });
+}
+
+function restoreStateFromChallengeSnapshot(preRunSnapshot) {
+  const safeSnapshot = preRunSnapshot && typeof preRunSnapshot === "object" ? preRunSnapshot : {};
+  Object.assign(gameState, DEFAULT_STATE, safeSnapshot);
+  gameState.schemaVersion = GAME_STATE_SCHEMA_VERSION;
+}
+
+const CHALLENGE_OBJECTIVE_EVALUATORS = Object.freeze({
+  bananas: () => gameState.bananas,
+  cash: () => gameState.cash,
+  total_bananas_earned: () => gameState.totalBananasEarned,
+  tree_tier_index: () => gameState.treeTierIndex,
+  shipments_total: () => gameState.totalShipments,
+  ship_bananas_total: () => gameState.totalShipments,
+  contracts_completed: () => gameState.contractsCompleted,
+  workers_owned: () => gameState.workersOwned,
+  survive_time_ms: (_objective, runState) => runState?.elapsedMs || 0,
+  score: (_objective, runState) => Math.max(0, Number(runState?.score) || 0),
+});
+
+const ASCENSION_REWARD_MODIFIER_DEFAULTS = Object.freeze({
+  productionMultiplier: 1,
+  clickMultiplier: 1,
+  exportPriceMultiplier: 1,
+  exportCooldownMultiplier: 1,
+  shippingCapacityMultiplier: 1,
+  researchPointMultiplier: 1,
+  maxActiveContractsAdd: 0,
+  qolChallengeTelemetry: false,
+});
+
+function compareChallengeRanks(left, right) {
+  const leftIndex = getRankIndex(left);
+  const rightIndex = getRankIndex(right);
+  const safeLeft = leftIndex >= 0 ? leftIndex : -1;
+  const safeRight = rightIndex >= 0 ? rightIndex : -1;
+  return safeLeft - safeRight;
+}
+
+function resolveAscensionRewardContext() {
+  const unlockedIds = sanitizeChallengeRewardsUnlocked(gameState.challengeRewardsUnlocked);
+  const resolved = { ...ASCENSION_REWARD_MODIFIER_DEFAULTS };
+  const applied = [];
+  const unlockedCosmetics = [];
+  const unlockedUtility = [];
+
+  unlockedIds.forEach((rewardId) => {
+    const reward = ascensionRewardById.get(rewardId);
+    if (!reward) {
+      return;
+    }
+
+    if (reward.type === "badge" || reward.type === "cosmetic_title") {
+      unlockedCosmetics.push(reward);
+    } else if (reward.type === "utility_unlock" || reward.type === "qol_toggle") {
+      unlockedUtility.push(reward);
+    }
+
+    const modifiers = Array.isArray(reward.modifiers) ? reward.modifiers : [];
+    modifiers.forEach((modifier) => {
+      if (!modifier || typeof modifier !== "object" || !(modifier.stat in resolved)) {
+        return;
+      }
+      resolved[modifier.stat] = applyNormalizedModifierValue(resolved[modifier.stat], modifier);
+      applied.push({
+        stat: modifier.stat,
+        op: modifier.op,
+        value: modifier.value,
+        sourceId: reward.id,
+        category: modifier.category || "ascension_reward",
+      });
+    });
+  });
+
+  resolved.productionMultiplier = Math.max(0.1, Number(resolved.productionMultiplier) || 1);
+  resolved.clickMultiplier = Math.max(0.1, Number(resolved.clickMultiplier) || 1);
+  resolved.exportPriceMultiplier = Math.max(0.1, Number(resolved.exportPriceMultiplier) || 1);
+  resolved.exportCooldownMultiplier = Math.max(0.1, Number(resolved.exportCooldownMultiplier) || 1);
+  resolved.shippingCapacityMultiplier = Math.max(0.1, Number(resolved.shippingCapacityMultiplier) || 1);
+  resolved.researchPointMultiplier = Math.max(0.1, Number(resolved.researchPointMultiplier) || 1);
+  resolved.maxActiveContractsAdd = Math.max(0, Math.floor(Number(resolved.maxActiveContractsAdd) || 0));
+  resolved.qolChallengeTelemetry = Boolean(resolved.qolChallengeTelemetry);
+
+  return {
+    unlockedRewardIds: unlockedIds,
+    modifiersApplied: applied,
+    resolved,
+    unlockedCosmetics,
+    unlockedUtility,
+  };
+}
+
+function getChallengeObjectiveCurrentValue(objective, runState) {
+  const evaluator = CHALLENGE_OBJECTIVE_EVALUATORS[objective?.type];
+  if (typeof evaluator !== "function") {
+    return 0;
+  }
+  return Math.max(0, Number(evaluator(objective, runState)) || 0);
+}
+
+function getChallengeRankFromElapsed(challenge, elapsedMs) {
+  const thresholds = challenge?.rankThresholds || {};
+  const safeElapsed = Math.max(0, Math.floor(Number(elapsedMs) || 0));
+  const goldMax = Math.max(0, Number(thresholds.goldMaxElapsedMs) || 0);
+  const silverMax = Math.max(0, Number(thresholds.silverMaxElapsedMs) || 0);
+  const bronzeMax = Math.max(0, Number(thresholds.bronzeMaxElapsedMs) || Number(challenge?.timeLimitMs) || 0);
+  if (goldMax > 0 && safeElapsed <= goldMax) {
+    return "Gold";
+  }
+  if (silverMax > 0 && safeElapsed <= silverMax) {
+    return "Silver";
+  }
+  if (bronzeMax <= 0 || safeElapsed <= bronzeMax) {
+    return "Bronze";
+  }
+  return "Bronze";
+}
+
+function getChallengeScore(challenge, runState) {
+  const safeElapsed = Math.max(0, Math.floor(Number(runState?.elapsedMs) || 0));
+  const rank = getChallengeRankFromElapsed(challenge, safeElapsed);
+  const rankBase = rank === "Gold" ? 3000 : rank === "Silver" ? 2000 : 1200;
+  const timeBonus = Math.max(0, Math.floor(1_000_000 / Math.max(1, safeElapsed + 1000)));
+  const objectives = Array.isArray(challenge?.objectives) ? challenge.objectives : [];
+  const objectiveBonus = objectives.reduce((sum, objective) => {
+    const target = Math.max(1, Number(objective.target) || 1);
+    const progress = Math.max(0, Number(runState?.objectiveProgress?.[objective.id]) || 0);
+    const completionPct = Math.max(0, Math.min(1.5, progress / target));
+    return sum + Math.floor(completionPct * 120);
+  }, 0);
+  return rankBase + timeBonus + objectiveBonus;
+}
+
+function updateChallengeObjectiveProgress(runState) {
+  if (!runState || !ascensionChallengeById.has(runState.challengeId)) {
+    return;
+  }
+  const challenge = ascensionChallengeById.get(runState.challengeId);
+  const nextProgress = { ...runState.objectiveProgress };
+  for (const objective of challenge.objectives || []) {
+    const currentValue = getChallengeObjectiveCurrentValue(objective, runState);
+    const prevValue = Math.max(0, Number(nextProgress[objective.id]) || 0);
+    nextProgress[objective.id] = Math.max(prevValue, currentValue);
+  }
+  runState.objectiveProgress = nextProgress;
+  runState.score = getChallengeScore(challenge, runState);
+}
+
+function areChallengeObjectivesMet(runState) {
+  if (!runState || !ascensionChallengeById.has(runState.challengeId)) {
+    return false;
+  }
+  const challenge = ascensionChallengeById.get(runState.challengeId);
+  return (challenge.objectives || []).every((objective) => {
+    const value = Math.max(0, Number(runState.objectiveProgress?.[objective.id]) || 0);
+    const target = Math.max(0, Number(objective.target) || 0);
+    return value >= target;
+  });
+}
+
+function shouldFailChallengeRun(runState) {
+  if (!runState || !ascensionChallengeById.has(runState.challengeId)) {
+    return false;
+  }
+  const challenge = ascensionChallengeById.get(runState.challengeId);
+  const timeLimitMs = Math.max(0, Number(challenge.timeLimitMs) || 0);
+  if (timeLimitMs <= 0) {
+    return false;
+  }
+  return Math.floor(Number(runState.elapsedMs) || 0) > timeLimitMs && !areChallengeObjectivesMet(runState);
+}
+
+function evaluateActiveChallengeRunCompletion() {
+  const run = gameState.activeChallengeRun;
+  if (!run || run.status !== CHALLENGE_RUN_STATUS.active) {
+    return null;
+  }
+  updateChallengeObjectiveProgress(run);
+  if (areChallengeObjectivesMet(run)) {
+    return finalizeChallengeRun(CHALLENGE_RUN_STATUS.completed);
+  }
+  if (shouldFailChallengeRun(run)) {
+    return finalizeChallengeRun(CHALLENGE_RUN_STATUS.failed);
+  }
+  return null;
+}
+
+function applyChallengeHistoryCompletion(challengeId, elapsedMs, rank) {
+  const history = sanitizeChallengeHistory(gameState.challengeHistory);
+  const current = history[challengeId] || {
+    completions: 0,
+    bestRank: null,
+    bestTimeMs: null,
+    lastCompletedAt: null,
+  };
+  const normalizedElapsed = Math.max(0, Math.floor(Number(elapsedMs) || 0));
+  const normalizedRank = String(rank || "Bronze");
+  const currentBestRank = current.bestRank || "Bronze";
+  const betterRank = compareChallengeRanks(normalizedRank, currentBestRank) > 0;
+  const bestRank = current.bestRank == null ? normalizedRank : (betterRank ? normalizedRank : current.bestRank);
+  history[challengeId] = {
+    completions: current.completions + 1,
+    bestRank,
+    bestTimeMs: current.bestTimeMs == null ? normalizedElapsed : Math.min(current.bestTimeMs, normalizedElapsed),
+    lastCompletedAt: Date.now(),
+  };
+  gameState.challengeHistory = history;
+}
+
+function finalizeChallengeRun(status, options = {}) {
+  const activeRun = gameState.activeChallengeRun;
+  if (!activeRun || !ascensionChallengeById.has(activeRun.challengeId)) {
+    return false;
+  }
+
+  const challenge = ascensionChallengeById.get(activeRun.challengeId);
+  const elapsedMs = Math.max(0, Math.floor(Number(activeRun.elapsedMs) || 0));
+  const objectiveProgress = cloneSerializable(activeRun.objectiveProgress || {});
+  const preRunSnapshot = cloneSerializable(activeRun.preRunSnapshot || {});
+  const score = Math.max(0, Number(activeRun.score) || 0);
+
+  restoreStateFromChallengeSnapshot(preRunSnapshot);
+  gameState.challengeHistory = sanitizeChallengeHistory(gameState.challengeHistory);
+  gameState.challengeRewardsUnlocked = sanitizeChallengeRewardsUnlocked(gameState.challengeRewardsUnlocked);
+  gameState.activeChallengeRun = null;
+  gameState.challengeLastResult = null;
+
+  let finalRank = String(options.rank || "Bronze");
+  const rewardsGranted = [];
+  if (status === CHALLENGE_RUN_STATUS.completed) {
+    finalRank = getChallengeRankFromElapsed(challenge, elapsedMs);
+    applyChallengeHistoryCompletion(challenge.id, elapsedMs, finalRank);
+    const rankRewards = getRewardsForChallengeRank(challenge, finalRank);
+    const rewards = new Set(gameState.challengeRewardsUnlocked || []);
+    rankRewards.forEach((rewardId) => {
+      const rewardDef = ascensionRewardById.get(rewardId);
+      const repeatable = Boolean(rewardDef?.repeatable);
+      const alreadyUnlocked = rewards.has(rewardId);
+      if (!alreadyUnlocked || repeatable) {
+        rewardsGranted.push(rewardId);
+      }
+      rewards.add(rewardId);
+    });
+    gameState.challengeRewardsUnlocked = Array.from(rewards);
+  }
+
+  gameState.challengeLastResult = {
+    challengeId: challenge.id,
+    status,
+    rank: finalRank,
+    elapsedMs,
+    score,
+    completedAt: Date.now(),
+    objectiveProgress,
+    rewardsGranted,
+  };
+
+  treeHarvestSystem.deserialize(gameState.tree);
+  rebuildEvolutionRewardsFromTier();
+  refreshMilestones();
+  refreshShippingLaneUnlocks();
+  updateContracts();
+  recomputeDerivedStats();
+  assertFiniteCoreState(`challenge-${status}`);
+  notifyListeners();
+
+  return {
+    success: true,
+    status,
+    challengeId: challenge.id,
+    elapsedMs,
+    rank: finalRank,
+    score,
+    rewardsGranted,
+    objectiveProgress,
+  };
 }
 
 function sanitizeBuyerCooldowns(rawCooldowns) {
@@ -795,6 +1290,12 @@ function migrateLoadedState(rawState) {
     migrated.purchasedPipUpgrades = {};
     migrated.pipSpentTotal = 0;
     migrated.pipRespecCount = 0;
+  }
+  if (sourceSchemaVersion < 9) {
+    migrated.activeChallengeRun = getDefaultActiveChallengeRun();
+    migrated.challengeHistory = getDefaultChallengeHistory();
+    migrated.challengeRewardsUnlocked = getDefaultChallengeRewardsUnlocked();
+    migrated.challengeLastResult = getDefaultChallengeLastResult();
   }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
@@ -995,7 +1496,9 @@ function getEffectiveShippingLaneCapacity(lane) {
   const tierIndex = Math.max(0, Math.floor(Number(gameState.treeTierIndex) || 0));
   const tierMultiplier = 1 + tierIndex * SHIPPING_CAPACITY_PER_TIER;
   const pipModifiers = getPipModifiers();
-  return Math.max(1, Math.floor(baseCapacity * tierMultiplier * pipModifiers.shippingCapacityMultiplier));
+  const challenge = resolveChallengeContext().resolved;
+  const reward = resolveAscensionRewardContext().resolved;
+  return Math.max(1, Math.floor(baseCapacity * tierMultiplier * pipModifiers.shippingCapacityMultiplier * challenge.shippingCapacityMultiplier * reward.shippingCapacityMultiplier));
 }
 
 function getTierPickerUpdateCaps() {
@@ -1009,6 +1512,7 @@ function getTierPickerUpdateCaps() {
 
 function getOrchardSystemBonuses() {
   const orchardsOwned = Math.max(0, Math.floor(Number(gameState.orchardsOwned) || 0));
+  const challenge = resolveChallengeContext().resolved;
   const capacityBonus = orchardsOwned * ORCHARD_CAPACITY_BONUS_PER_ORCHARD;
   const spawnIntervalMultiplier = Math.max(
     ORCHARD_MIN_SPAWN_INTERVAL_MULTIPLIER,
@@ -1020,9 +1524,9 @@ function getOrchardSystemBonuses() {
   );
   return {
     orchardsOwned,
-    capacityBonus,
-    spawnIntervalMultiplier: stabilizeNumber(spawnIntervalMultiplier),
-    exportBonusMultiplier: stabilizeNumber(exportBonusMultiplier),
+    capacityBonus: Math.max(0, Math.floor(capacityBonus * challenge.orchardCapacityMultiplier)),
+    spawnIntervalMultiplier: stabilizeNumber(spawnIntervalMultiplier * challenge.orchardSpawnIntervalMultiplier),
+    exportBonusMultiplier: stabilizeNumber(1 + (exportBonusMultiplier - 1) * challenge.orchardExportMultiplier),
   };
 }
 
@@ -1040,11 +1544,14 @@ function recomputeDerivedStats() {
   const orchardBonuses = getOrchardSystemBonuses();
   const ceoGlobalMultiplier = getCeoGlobalMultiplier();
   const researchCompletionMultipliers = getResearchCompletionMultipliers();
+  const challengeContext = resolveChallengeContext();
+  const challengeModifiers = challengeContext.resolved;
+  const rewardModifiers = resolveAscensionRewardContext().resolved;
 
-  gameState.productionMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * pipModifiers.productionMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.productionMultiplier));
-  gameState.clickMultiplier = Math.max(1, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * pipModifiers.clickMultiplier * researchCompletionMultipliers.clickMultiplier));
+  gameState.productionMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * pipModifiers.productionMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.productionMultiplier * challengeModifiers.productionMultiplier * rewardModifiers.productionMultiplier));
+  gameState.clickMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * pipModifiers.clickMultiplier * researchCompletionMultipliers.clickMultiplier * challengeModifiers.clickMultiplier * rewardModifiers.clickMultiplier));
   gameState.exportPriceMultiplier = Math.max(
-    1,
+    0,
     stabilizeNumber(
       upgradeModifiers.exportPriceMultiplier *
         prestigeBonuses.exportPriceMultiplier *
@@ -1053,10 +1560,12 @@ function recomputeDerivedStats() {
         pipModifiers.exportPriceMultiplier *
         orchardBonuses.exportBonusMultiplier *
         ceoGlobalMultiplier *
-        researchCompletionMultipliers.exportPriceMultiplier
+        researchCompletionMultipliers.exportPriceMultiplier *
+        challengeModifiers.exportPriceMultiplier *
+        rewardModifiers.exportPriceMultiplier
     )
   );
-  gameState.exportCooldownMultiplier = Math.max(0.1, stabilizeNumber(upgradeModifiers.exportCooldownMultiplier * pipModifiers.exportCooldownMultiplier));
+  gameState.exportCooldownMultiplier = Math.max(0.1, stabilizeNumber(upgradeModifiers.exportCooldownMultiplier * pipModifiers.exportCooldownMultiplier * challengeModifiers.exportCooldownMultiplier * rewardModifiers.exportCooldownMultiplier));
   gameState.packedExportBonusMultiplier = stabilizeNumber(packingMultiplier);
   gameState.orchardExportBonusMultiplier = orchardBonuses.exportBonusMultiplier;
 
@@ -1069,7 +1578,7 @@ function recomputeDerivedStats() {
   // Production multipliers must affect real active-income paths (workers + tree harvest),
   // not only legacy per-tree passive stats that are no longer used for earning.
   gameState.bananasPerWorkerPerSecond = stabilizeNumber(
-    workerBase * workerPrestigeMultiplier * achievementMultipliers.workerMultiplier * gameState.productionMultiplier
+    workerBase * workerPrestigeMultiplier * achievementMultipliers.workerMultiplier * gameState.productionMultiplier * challengeModifiers.workerOutputMultiplier
   );
   gameState.clickYield = stabilizeNumber(BASE_CLICK_YIELD * gameState.clickMultiplier);
 
@@ -1089,7 +1598,8 @@ function recomputeDerivedStats() {
       pipModifiers.spawnIntervalMultiplier *
       spawnIntervalMultiplierFromTrees *
       orchardBonuses.spawnIntervalMultiplier *
-      fertilizerSpawnMultiplier,
+      fertilizerSpawnMultiplier *
+      challengeModifiers.spawnIntervalMultiplier,
     maxBananasOnTree:
       12 +
       (Number(tierHarvest.maxBananasBonus) || 0) +
@@ -1097,19 +1607,22 @@ function recomputeDerivedStats() {
       pipModifiers.maxBananasFlat +
       treeCapacityBonusFromTrees +
       orchardBonuses.capacityBonus +
-      fertilizerCapacityBonus,
+      fertilizerCapacityBonus +
+      challengeModifiers.maxBananasAdd,
     clickHarvestYield:
       gameState.clickYield *
       gameState.productionMultiplier *
       (Number(tierHarvest.clickYieldMultiplier) || 1) *
       treeHarvestModifiers.clickYieldMultiplier *
-      pipModifiers.clickYieldMultiplier,
+      pipModifiers.clickYieldMultiplier *
+      challengeModifiers.clickYieldMultiplier,
     goldenChance: 0.005 + (Number(tierHarvest.goldenChanceAdd) || 0) + treeHarvestModifiers.goldenChanceAdd + pipModifiers.goldenChanceAdd,
     goldenMultiplier: 35 + (Number(tierHarvest.goldenMultiplierAdd) || 0) + treeHarvestModifiers.goldenMultiplierAdd + pipModifiers.goldenMultiplierAdd,
     diamondChance: 0.0005 + (Number(tierHarvest.diamondChanceAdd) || 0) + treeHarvestModifiers.diamondChanceAdd,
     diamondMultiplier: 200 + (Number(tierHarvest.diamondMultiplierAdd) || 0) + treeHarvestModifiers.diamondMultiplierAdd,
     monkeyPickerInterval: treeHarvestModifiers.monkeyPickerInterval,
     shakeCooldownSeconds: 35 * (Number(tierHarvest.shakeCooldownMultiplier) || 1) * treeHarvestModifiers.shakeCooldownMultiplier * pipModifiers.shakeCooldownMultiplier,
+    shakeDisabled: !challengeModifiers.shakeEnabled,
   });
   gameState.tree = treeHarvestSystem.serialize();
 }
@@ -1475,7 +1988,7 @@ function updateContracts(nowMs = Date.now()) {
   gameState.activeContracts = active;
 
   const elapsedSinceGen = (nowMs - gameState.lastContractGenerationTime) / 1000;
-  if (elapsedSinceGen >= CONTRACT_GENERATION_INTERVAL_SECONDS && gameState.activeContracts.length < MAX_ACTIVE_CONTRACTS) {
+  if (elapsedSinceGen >= CONTRACT_GENERATION_INTERVAL_SECONDS && gameState.activeContracts.length < getMaxActiveContracts()) {
     const newContract = createContract();
     if (newContract) {
       gameState.activeContracts = [...gameState.activeContracts, newContract];
@@ -1484,9 +1997,16 @@ function updateContracts(nowMs = Date.now()) {
   }
 }
 
+function getMaxActiveContracts() {
+  const reward = resolveAscensionRewardContext().resolved;
+  return Math.max(1, MAX_ACTIVE_CONTRACTS + reward.maxActiveContractsAdd);
+}
+
 export function getResearchPointsPerSecond() {
   const achievementMultipliers = getAchievementMultipliers();
-  return stabilizeNumber(gameState.researchHutLevel * 0.06 * achievementMultipliers.researchMultiplier);
+  const challenge = resolveChallengeContext().resolved;
+  const reward = resolveAscensionRewardContext().resolved;
+  return stabilizeNumber(gameState.researchHutLevel * 0.06 * achievementMultipliers.researchMultiplier * challenge.researchPointMultiplier * reward.researchPointMultiplier);
 }
 
 function hasResearchPrerequisites(upgrade) {
@@ -1652,7 +2172,9 @@ export function getPrestigeBonuses() {
 }
 
 export function isPrestigeUnlocked() {
-  return gameState.treeTierIndex >= PRESTIGE_UNLOCK_TIER_INDEX || gameState.totalBananasEarned >= PRESTIGE_UNLOCK_TOTAL_BANANAS;
+  const unlockedByProgress = gameState.treeTierIndex >= PRESTIGE_UNLOCK_TIER_INDEX || gameState.totalBananasEarned >= PRESTIGE_UNLOCK_TOTAL_BANANAS;
+  const challengeAllowsPrestige = resolveChallengeContext().resolved.prestigeEnabled;
+  return unlockedByProgress && challengeAllowsPrestige;
 }
 
 function refreshMilestones() {
@@ -1986,6 +2508,7 @@ function performAutoExport() {
 
 function getEstimatedAutoBananasPerSecond() {
   const snapshot = treeHarvestSystem.getSnapshot();
+  const challenge = resolveChallengeContext().resolved;
   const spawnInterval = Math.max(0.001, Number(snapshot.spawnInterval) || 1.5);
   const spawnRatePerSecond = 1 / spawnInterval;
 
@@ -2002,7 +2525,7 @@ function getEstimatedAutoBananasPerSecond() {
   const baseWorkerPickRatePerSecond = gameState.workersOwned * (Math.max(0, Number(gameState.bananasPerWorkerPerSecond) || 0) / clickYield);
   // Keep in sync with TreeHarvestSystem's worker cap so the HUD estimate matches reality.
   const pipModifiers = getPipModifiers();
-  const workerPickRatePerSecondRaw = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * pipModifiers.workerPickMultiplier;
+  const workerPickRatePerSecondRaw = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * pipModifiers.workerPickMultiplier * challenge.workerPickRateMultiplier;
   const workerPickRatePerSecond = Math.min(workerPickRatePerSecondRaw, spawnRatePerSecond * 0.8);
 
   const monkeyPickRatePerSecond = snapshot.monkeyPickerInterval > 0 ? 1 / Math.max(0.05, Number(snapshot.monkeyPickerInterval)) : 0;
@@ -2064,6 +2587,10 @@ export function getStatBreakdown() {
   const achievements = getAchievementMultipliers();
   const researchRows = getResearchCompletionMultipliers();
   const orchardPickRate = getOrchardPickRatePerSecond();
+  const challengeContext = resolveChallengeContext();
+  const challenge = challengeContext.resolved;
+  const rewardContext = resolveAscensionRewardContext();
+  const reward = rewardContext.resolved;
 
   return {
     final: {
@@ -2086,6 +2613,42 @@ export function getStatBreakdown() {
       researchRowProduction: stabilizeNumber(researchRows.productionMultiplier),
       evolutionProduction: stabilizeNumber(gameState.evolutionProductionMultiplier),
       ceoGlobal: stabilizeNumber(getCeoGlobalMultiplier()),
+      challengeProduction: stabilizeNumber(challenge.productionMultiplier),
+      challengeClick: stabilizeNumber(challenge.clickMultiplier),
+      challengeExportPrice: stabilizeNumber(challenge.exportPriceMultiplier),
+      challengeExportCooldown: stabilizeNumber(challenge.exportCooldownMultiplier),
+      challengeSpawnInterval: stabilizeNumber(challenge.spawnIntervalMultiplier),
+      challengeWorkerPickRate: stabilizeNumber(challenge.workerPickRateMultiplier),
+      challengeOrchardPickRate: stabilizeNumber(challenge.orchardPickRateMultiplier),
+      challengeResearchRate: stabilizeNumber(challenge.researchPointMultiplier),
+      challengeShippingCapacity: stabilizeNumber(challenge.shippingCapacityMultiplier),
+      rewardProduction: stabilizeNumber(reward.productionMultiplier),
+      rewardClick: stabilizeNumber(reward.clickMultiplier),
+      rewardExportPrice: stabilizeNumber(reward.exportPriceMultiplier),
+      rewardExportCooldown: stabilizeNumber(reward.exportCooldownMultiplier),
+      rewardShippingCapacity: stabilizeNumber(reward.shippingCapacityMultiplier),
+      rewardResearchRate: stabilizeNumber(reward.researchPointMultiplier),
+      rewardContractsAdd: reward.maxActiveContractsAdd,
+    },
+    challenge: {
+      active: challengeContext.active,
+      challengeId: challengeContext.challengeId,
+      rulesApplied: challengeContext.modifiersApplied,
+      flags: {
+        shakeEnabled: challenge.shakeEnabled,
+        offlineGainsEnabled: challenge.offlineGainsEnabled,
+        prestigeEnabled: challenge.prestigeEnabled,
+      },
+    },
+    rewards: {
+      unlockedCount: rewardContext.unlockedRewardIds.length,
+      unlockedRewardIds: rewardContext.unlockedRewardIds,
+      appliedModifiers: rewardContext.modifiersApplied,
+      cosmetics: rewardContext.unlockedCosmetics.map((item) => ({ id: item.id, title: item.title })),
+      utility: rewardContext.unlockedUtility.map((item) => ({ id: item.id, title: item.title })),
+      flags: {
+        qolChallengeTelemetry: reward.qolChallengeTelemetry,
+      },
     },
   };
 }
@@ -2137,6 +2700,9 @@ export function clickTreeBanana(bananaId, context = {}) {
 }
 
 export function shakeTreeHarvest() {
+  if (!resolveChallengeContext().resolved.shakeEnabled) {
+    return { success: false, reason: "disabled", cooldownRemaining: 0 };
+  }
   const result = treeHarvestSystem.shakeTree();
   if (!result.success) {
     return result;
@@ -2189,6 +2755,172 @@ export function getPipUpgradeStatus() {
       maxed,
     };
   });
+}
+
+export function getAscensionChallengesStatus() {
+  const activeRun = gameState.activeChallengeRun;
+  const unlockedRewards = new Set(sanitizeChallengeRewardsUnlocked(gameState.challengeRewardsUnlocked));
+  return ascensionChallenges.map((challenge) => {
+    const history = gameState.challengeHistory?.[challenge.id] || null;
+    const unlocked = isChallengeUnlocked(challenge);
+    const active = Boolean(activeRun && activeRun.challengeId === challenge.id && activeRun.status === CHALLENGE_RUN_STATUS.active);
+    const rewardsByRank = challenge.rewardsByRank && typeof challenge.rewardsByRank === "object" ? challenge.rewardsByRank : {};
+    const rewardPreview = Object.entries(rewardsByRank).map(([rank, rewardIds]) => ({
+      rank,
+      rewards: (Array.isArray(rewardIds) ? rewardIds : [])
+        .map((rewardId) => {
+          const reward = ascensionRewardById.get(rewardId);
+          if (!reward) {
+            return null;
+          }
+          return {
+            id: reward.id,
+            title: reward.title,
+            type: reward.type,
+            unlocked: unlockedRewards.has(reward.id),
+          };
+        })
+        .filter(Boolean),
+    }));
+    const rewardUnlocked = rewardPreview.some((rankSet) => rankSet.rewards.some((reward) => reward.unlocked));
+    return {
+      ...challenge,
+      unlocked,
+      active,
+      rewardUnlocked,
+      rewardPreview,
+      history,
+    };
+  });
+}
+
+export function getActiveChallengeRunStatus() {
+  const run = gameState.activeChallengeRun;
+  if (!run || !ascensionChallengeById.has(run.challengeId)) {
+    return null;
+  }
+  const challenge = ascensionChallengeById.get(run.challengeId);
+  const objectives = (challenge.objectives || []).map((objective) => {
+    const progress = Math.max(0, Number(run.objectiveProgress?.[objective.id]) || 0);
+    const target = Math.max(0, Number(objective.target) || 0);
+    const progressPct = target <= 0 ? 1 : Math.max(0, Math.min(1, progress / target));
+    return {
+      ...objective,
+      progress,
+      progressPct,
+      complete: progress >= target,
+    };
+  });
+  return {
+    ...run,
+    challengeName: challenge.name,
+    challengeDescription: challenge.description,
+    score: Math.max(0, Number(run.score) || 0),
+    timeLimitMs: Math.max(0, Number(challenge.timeLimitMs) || 0),
+    rankPreview: getChallengeRankFromElapsed(challenge, run.elapsedMs),
+    objectives,
+    allObjectivesComplete: areChallengeObjectivesMet(run),
+  };
+}
+
+export function getChallengeLastResult() {
+  return gameState.challengeLastResult ? cloneSerializable(gameState.challengeLastResult) : null;
+}
+
+export function getAscensionRewardsStatus() {
+  const context = resolveAscensionRewardContext();
+  return {
+    unlockedRewardIds: context.unlockedRewardIds,
+    modifiersApplied: context.modifiersApplied,
+    cosmetics: context.unlockedCosmetics,
+    utility: context.unlockedUtility,
+    resolved: context.resolved,
+    maxActiveContracts: getMaxActiveContracts(),
+  };
+}
+
+export function clearChallengeLastResult() {
+  if (!gameState.challengeLastResult) {
+    return false;
+  }
+  gameState.challengeLastResult = null;
+  notifyListeners();
+  return true;
+}
+
+export function startChallengeRun(challengeId) {
+  if (gameState.activeChallengeRun) {
+    return { success: false, reason: "challenge_already_active" };
+  }
+
+  const challenge = ascensionChallengeById.get(challengeId);
+  if (!challenge) {
+    return { success: false, reason: "challenge_not_found" };
+  }
+  if (!isChallengeUnlocked(challenge)) {
+    return { success: false, reason: "challenge_locked" };
+  }
+
+  const preRunSnapshot = createChallengePreRunSnapshot();
+  prepareStateForChallengeRun();
+
+  gameState.activeChallengeRun = {
+    challengeId: challenge.id,
+    startedAt: Date.now(),
+    seed: Math.floor(Math.random() * 1_000_000_000),
+    status: CHALLENGE_RUN_STATUS.active,
+    elapsedMs: 0,
+    score: 0,
+    objectiveProgress: buildDefaultObjectiveProgress(challenge),
+    appliedRuleIds: Array.isArray(challenge.ruleIds) ? [...challenge.ruleIds] : [],
+    preRunSnapshot,
+  };
+  gameState.challengeLastResult = null;
+  updateChallengeObjectiveProgress(gameState.activeChallengeRun);
+
+  treeHarvestSystem.deserialize(gameState.tree);
+  recomputeDerivedStats();
+  notifyListeners();
+  return { success: true, challengeId: challenge.id };
+}
+
+export function resumeChallengeRun() {
+  const run = gameState.activeChallengeRun;
+  if (!run || !ascensionChallengeById.has(run.challengeId)) {
+    return { success: false, reason: "no_active_challenge" };
+  }
+  run.status = CHALLENGE_RUN_STATUS.active;
+  run.startedAt = Number(run.startedAt) || Date.now();
+  notifyListeners();
+  return { success: true, challengeId: run.challengeId };
+}
+
+export function abandonChallengeRun() {
+  const run = gameState.activeChallengeRun;
+  if (!run) {
+    return { success: false, reason: "no_active_challenge" };
+  }
+  return finalizeChallengeRun(CHALLENGE_RUN_STATUS.abandoned);
+}
+
+export function completeChallengeRun() {
+  const run = gameState.activeChallengeRun;
+  if (!run) {
+    return { success: false, reason: "no_active_challenge" };
+  }
+  updateChallengeObjectiveProgress(run);
+  if (!areChallengeObjectivesMet(run)) {
+    return { success: false, reason: "objectives_not_complete" };
+  }
+  return finalizeChallengeRun(CHALLENGE_RUN_STATUS.completed);
+}
+
+export function failChallengeRun() {
+  const run = gameState.activeChallengeRun;
+  if (!run) {
+    return { success: false, reason: "no_active_challenge" };
+  }
+  return finalizeChallengeRun(CHALLENGE_RUN_STATUS.failed);
 }
 
 export function purchasePipUpgrade(upgradeId) {
@@ -2477,6 +3209,10 @@ export function applyLoadedState(loadedState = {}) {
   gameState.pipSpentTotal = clampNonNegative(Math.floor(Number(gameState.pipSpentTotal) || 0));
   gameState.pipRespecCount = clampNonNegative(Math.floor(Number(gameState.pipRespecCount) || 0));
   gameState.prestigeCount = clampNonNegative(Math.floor(Number(gameState.prestigeCount) || 0));
+  gameState.challengeHistory = sanitizeChallengeHistory(gameState.challengeHistory);
+  gameState.challengeRewardsUnlocked = sanitizeChallengeRewardsUnlocked(gameState.challengeRewardsUnlocked);
+  gameState.activeChallengeRun = sanitizeActiveChallengeRun(gameState.activeChallengeRun);
+  gameState.challengeLastResult = sanitizeChallengeLastResult(gameState.challengeLastResult);
 
   gameState.evolutionProductionMultiplier = Math.max(1, Number(gameState.evolutionProductionMultiplier) || 1);
   gameState.packingShedLevel = clampNonNegative(Math.floor(Number(gameState.packingShedLevel) || 0));
@@ -2596,6 +3332,19 @@ export function applyOfflineProgress(elapsedSeconds) {
     bananasPerWorkerPerSecond: gameState.bananasPerWorkerPerSecond,
     workersOwned: gameState.workersOwned,
   });
+  const challengeModifiers = resolveChallengeContext().resolved;
+  if (!challengeModifiers.offlineGainsEnabled) {
+    if (gameState.activeChallengeRun?.status === CHALLENGE_RUN_STATUS.active) {
+      gameState.activeChallengeRun.elapsedMs = Math.max(
+        0,
+        Math.floor(Number(gameState.activeChallengeRun.elapsedMs) || 0) + Math.floor(safeElapsedSeconds * 1000)
+      );
+      evaluateActiveChallengeRunCompletion();
+    }
+    gameState.lastTickTime = Date.now();
+    notifyListeners();
+    return 0;
+  }
   updateTimedEvents(Date.now());
   const earned = addPassiveBananas(safeElapsedSeconds);
   addPassiveResearchPoints(safeElapsedSeconds);
@@ -2603,7 +3352,7 @@ export function applyOfflineProgress(elapsedSeconds) {
   const tierWorkerPickMultiplier = Math.max(0.1, Number(tierHarvest.workerPickMultiplier) || 1);
   const treeClickYield = Math.max(1, Number(gameState.tree?.clickHarvestYield) || 1);
   const baseWorkerPickRatePerSecond = gameState.workersOwned * (Math.max(0, Number(gameState.bananasPerWorkerPerSecond) || 0) / treeClickYield);
-  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * getPipModifiers().workerPickMultiplier;
+  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * getPipModifiers().workerPickMultiplier * challengeModifiers.workerPickRateMultiplier;
   const orchardPickRatePerSecond = getOrchardPickRatePerSecond();
   const pickerCaps = getTierPickerUpdateCaps();
   treeHarvestSystem.update(safeElapsedSeconds, {
@@ -2619,6 +3368,13 @@ export function applyOfflineProgress(elapsedSeconds) {
   gameState.lastTickTime = Date.now();
   performAutoExportOffline(safeElapsedSeconds);
   performAutoSell();
+  if (gameState.activeChallengeRun?.status === CHALLENGE_RUN_STATUS.active) {
+    gameState.activeChallengeRun.elapsedMs = Math.max(
+      0,
+      Math.floor(Number(gameState.activeChallengeRun.elapsedMs) || 0) + Math.floor(safeElapsedSeconds * 1000)
+    );
+    evaluateActiveChallengeRunCompletion();
+  }
   assertFiniteCoreState("applyOfflineProgress");
   logEconomyDebug("offline-after", {
     earned,
@@ -2653,7 +3409,8 @@ export function tick() {
   const tierWorkerPickMultiplier = Math.max(0.1, Number(tierHarvest.workerPickMultiplier) || 1);
   const treeClickYield = Math.max(1, Number(gameState.tree?.clickHarvestYield) || 1);
   const baseWorkerPickRatePerSecond = gameState.workersOwned * (Math.max(0, Number(gameState.bananasPerWorkerPerSecond) || 0) / treeClickYield);
-  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * getPipModifiers().workerPickMultiplier;
+  const challengeModifiers = resolveChallengeContext().resolved;
+  const workerPickRatePerSecond = baseWorkerPickRatePerSecond * tierWorkerPickMultiplier * getTreeHarvestModifiers().workerPickMultiplier * getPipModifiers().workerPickMultiplier * challengeModifiers.workerPickRateMultiplier;
   const orchardPickRatePerSecond = getOrchardPickRatePerSecond();
   const pickerCaps = getTierPickerUpdateCaps();
   treeHarvestSystem.update(elapsedSeconds, {
@@ -2667,6 +3424,13 @@ export function tick() {
   processWeirdScienceConverters(elapsedSeconds);
   performAutoExport();
   performAutoSell();
+  if (gameState.activeChallengeRun?.status === CHALLENGE_RUN_STATUS.active) {
+    gameState.activeChallengeRun.elapsedMs = Math.max(
+      0,
+      Math.floor(Number(gameState.activeChallengeRun.elapsedMs) || 0) + Math.max(0, Math.floor(elapsedMs))
+    );
+    evaluateActiveChallengeRunCompletion();
+  }
   assertFiniteCoreState("tick");
   const tickEnd = typeof performance !== "undefined" ? performance.now() : Date.now();
   gameState.lastTickDurationMs = stabilizeNumber(tickEnd - tickStart, 3);
@@ -2796,6 +3560,7 @@ export function getOrchardPickRatePerSecond() {
   if (!isOrchardUnlocked()) {
     return 0;
   }
+  const challenge = resolveChallengeContext().resolved;
   const owned = Math.max(0, Math.floor(Number(gameState.orchardsOwned) || 0));
   if (owned <= 0) {
     return 0;
@@ -2804,7 +3569,7 @@ export function getOrchardPickRatePerSecond() {
   const tierIndex = Math.max(0, Math.floor(Number(gameState.treeTierIndex) || 0));
   const tierMultiplier = 1 + tierIndex * 0.05;
   const scaleExponent = 0.9;
-  return stabilizeNumber((owned ** scaleExponent) * per * tierMultiplier * getPipModifiers().orchardPickMultiplier);
+  return stabilizeNumber((owned ** scaleExponent) * per * tierMultiplier * getPipModifiers().orchardPickMultiplier * challenge.orchardPickRateMultiplier);
 }
 
 export function buyOrchard() {

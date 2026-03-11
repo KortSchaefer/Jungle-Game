@@ -313,6 +313,34 @@ textarea {
   gap: 0.75rem;
 }
 
+.challenge-hud-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border-left: 4px solid #6f9f72;
+  background: linear-gradient(180deg, #f8fcf6 0%, #f1f8ee 100%);
+}
+
+.challenge-hud-strip p {
+  font-size: 0.86rem;
+}
+
+.challenge-hud-strip p:first-child {
+  font-weight: 600;
+}
+
+.challenge-hud-strip.is-active {
+  border-left-color: #4a7a4f;
+  background: linear-gradient(180deg, #eff8eb 0%, #e4f2df 100%);
+}
+
+.challenge-hud-strip.is-warning {
+  border-left-color: #9a4141;
+  background: linear-gradient(180deg, #fbf3f1 0%, #f7ebe8 100%);
+}
+
 .tab-panel.is-active {
   display: grid;
 }
@@ -599,6 +627,94 @@ button:disabled {
 .buyers-list {
   display: grid;
   gap: 0.55rem;
+}
+
+.challenge-hub-list {
+  margin-top: 0.45rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.challenge-card {
+  border-left: 4px solid #9ab19b;
+}
+
+.challenge-card.is-locked {
+  opacity: 0.8;
+}
+
+.challenge-card.is-active {
+  border-left-color: #4a7a4f;
+  background: #eaf5e7;
+}
+
+.challenge-card.is-failed {
+  border-left-color: #9a4141;
+  background: #f9efed;
+}
+
+.challenge-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.challenge-status-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  padding: 0.12rem 0.5rem;
+  font-size: 0.74rem;
+  background: #eff6ec;
+}
+
+.challenge-status-chip.status-locked {
+  background: #f1f1f1;
+  color: #6f7470;
+}
+
+.challenge-status-chip.status-active {
+  background: #dff0d9;
+  color: #2d5832;
+}
+
+.challenge-status-chip.status-failed {
+  background: #f5dfdb;
+  color: #7a312f;
+}
+
+.challenge-status-chip.status-completed {
+  background: #dde9f6;
+  color: #29425e;
+}
+
+.challenge-status-chip.status-available {
+  background: #ecf4e7;
+  color: #335637;
+}
+
+.challenge-meta-list {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.challenge-tracker-list {
+  margin-top: 0.4rem;
+}
+
+.challenge-objective-item {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.challenge-objective-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.82rem;
 }
 
 .buyer-tier-group {

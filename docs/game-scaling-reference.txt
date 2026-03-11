@@ -1,5 +1,5 @@
 JUNGLE GAME SCALING + PROGRESSION REFERENCE
-Source: renderer code (schemaVersion 8)
+Source: renderer code (schemaVersion 9)
 
 1) CORE ECONOMY FORMULAS
 
@@ -471,4 +471,95 @@ Modifier integration (single-pass to avoid double stacking):
   spawn interval, max bananas, click harvest yield, golden chance/multiplier, shake cooldown.
 - Additional systems consume PIP modifiers:
   shipping lane capacity, auto-sell price, orchard pick rate, and research discount multiplier.
+
+20) ASCENSION CHALLENGES - FIRST CONTENT PACK
+
+Pack goal:
+- Validate challenge breadth across click play, exports, anti-automation, timed efficiency, and late-game systems.
+- Rewards are permanent but small to avoid forcing early challenge grinding.
+
+Challenge list (7 total):
+
+1) asc_click_sprint (Starter, click-focused)
+- Unlock: totalBananasEarned >= 6,000
+- Rules: no_orchard_bonus, reduced_export_value
+- Time limit: 14m (Gold <= 5m, Silver <= 9m, Bronze <= 14m)
+- Objectives: cash 5,000; shipments 12; total bananas earned 6,000
+- Flavor: "The board wants speed. No excuses."
+- Rewards:
+  Bronze: Sprint Broker (badge)
+  Silver: Operational Throughput I (+2% production)
+  Gold: Premium Fulfillment I (+2% export value)
+
+2) asc_labor_strike (Starter, anti-automation)
+- Unlock: totalBananasEarned >= 18,000
+- Rules: no_workers, no_orchards, disabled_shake
+- Time limit: 15m (Gold <= 7m, Silver <= 10m, Bronze <= 15m)
+- Objectives: cash 9,000; shipments 14; bananas on hand 750
+- Flavor: "No workers, no orchards, no shake. Just leadership."
+- Rewards:
+  Bronze: Hands-On Director (badge)
+  Silver: Executive Precision I (+2% click)
+  Gold: Operational Throughput II (+3% production)
+
+3) asc_worker_discipline (Core, worker-focused)
+- Unlock: treesOwned >= 25
+- Rules: tighter_lane_capacity
+- Time limit: 18m (Gold <= 8m, Silver <= 12m, Bronze <= 18m)
+- Objectives: bananas 1,500; tree tier index 3; shipments 18
+- Flavor: "Ops scale only if dispatch stays disciplined."
+- Rewards:
+  Bronze: Operations Chief (badge)
+  Silver: Freight Buffer I (+6% lane capacity)
+  Gold: Contracts Desk I (+1 contract slot), Challenge Telemetry (QoL flag)
+
+4) asc_clockwork_efficiency (Core, timed efficiency)
+- Unlock: totalBananasEarned >= 45,000
+- Rules: no_offline_gains, reduced_click_yield, tighter_lane_capacity
+- Time limit: 11m (Gold <= 6m, Silver <= 8m, Bronze <= 11m)
+- Objectives: cash 24,000; tree tier index 4; score 2,800
+- Flavor: "The timer is the opponent."
+- Rewards:
+  Bronze: Clockwork Executor (badge)
+  Silver: Dispatch Timing I (-3% export cooldown)
+  Gold: Premium Fulfillment II (+3% export value)
+
+5) asc_export_pressure (Core, export-focused)
+- Unlock: totalBananasEarned >= 75,000
+- Rules: contract_focus, reduced_click_yield
+- Time limit: 22m (Gold <= 10m, Silver <= 15m, Bronze <= 22m)
+- Objectives: contracts completed 8; cash 30,000
+- Flavor: "Cash flow wins. Idle stockpiles lose."
+- Rewards:
+  Bronze: Lane Strategist (badge)
+  Silver: Executive Precision I (+2% click)
+  Gold: Dispatch Timing I (-3% export cooldown)
+
+6) asc_contract_gauntlet (Advanced, contract mastery)
+- Unlock: totalBananasEarned >= 220,000
+- Rules: contract_focus, tighter_lane_capacity, reduced_export_value
+- Time limit: 20m (Gold <= 11m, Silver <= 15m, Bronze <= 20m)
+- Objectives: contracts completed 10; shipments 26; cash 140,000
+- Flavor: "You are the logistics algorithm now."
+- Rewards:
+  Bronze: Freight Buffer II (+8% lane capacity)
+  Silver: Contracts Desk II (+1 contract slot)
+  Gold: Dispatch Timing II (-4% export cooldown)
+
+7) asc_quantum_audit (Expert, late-game/prestige-era)
+- Unlock: antimatterBananas >= 40
+- Rules: disable_prestige, no_offline_gains, contract_focus, slower_spawn_rate
+- Time limit: 25m (Gold <= 13m, Silver <= 18m, Bronze <= 25m)
+- Objectives: tree tier index 6; contracts completed 14; cash 1,500,000; score 3,600
+- Flavor: "Board auditors arrive when margins get strange."
+- Rewards:
+  Bronze: Quantum CFO (cosmetic title)
+  Silver: Operational Throughput II (+3% production), Premium Fulfillment II (+3% export value)
+  Gold: Executive Precision II (+3% click)
+
+Reward pacing notes:
+- Bronze mostly cosmetic/badge utility signaling run completion.
+- Silver introduces practical economy gains.
+- Gold grants small but meaningful multipliers or utility increments.
+- Rewards are cumulative by rank per challenge and idempotent on replay.
 

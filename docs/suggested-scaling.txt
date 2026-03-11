@@ -152,3 +152,27 @@ Notes
   Export multipliers affect price/cooldowns/lanes
 - When changing caps, keep dt-spike safety (avoid draining canopy in one tick).
 
+ASCENSION CHALLENGES - FIRST CONTENT PACK PLAN (IMPLEMENTED)
+
+Why this pack:
+- Validate challenge framework breadth with distinct mastery profiles.
+- Confirm reward desirability without forcing early mandatory challenge grinding.
+
+Coverage checklist:
+- Click-focused: asc_click_sprint
+- Export-focused: asc_export_pressure
+- Anti-automation: asc_labor_strike
+- Timed efficiency: asc_clockwork_efficiency
+- Late-game/prestige-era: asc_quantum_audit
+- Additional bridge content: asc_worker_discipline, asc_contract_gauntlet
+
+Reward pacing rules used:
+- Bronze = badge/title or low-impact utility signal.
+- Silver = moderate practical boost.
+- Gold = strong-in-category but still small permanent edge.
+- Max reward growth stays in low single-digit multipliers per reward to avoid runaway.
+
+Future iteration knobs:
+- If clears are too easy: tighten time thresholds first, not objective targets.
+- If challenge economy feels mandatory too early: move Silver/Gold rewards to later unlock challenges.
+- If late-game challenge is too punishing: relax objective score target before reducing rule pressure.
