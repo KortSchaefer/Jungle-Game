@@ -3,36 +3,26 @@ All notable changes to this project are documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [1.2.0] - 2026-03-11
+## [1.2.1] - 2026-03-11
 ### Added
-- Ascension challenge UX overhaul:
-  - Pinned compact challenge HUD strip with live status/timer/objective count.
-  - Challenge start confirmation flow with clear temporary-rule warning.
-  - Improved challenge state presentation (`Locked`, `Available`, `Active`, `Failed`, `Completed`).
-- First Ascension challenge content pack (7 playable challenges) covering:
-  - click-focused play
-  - export-focused play
-  - anti-automation constraints
-  - timed efficiency runs
-  - late-game/prestige-era challenge flow
-- Expanded ascension reward catalog with additional permanent boosts, utility unlocks, badges, and titles.
-- Challenge reward previews by rank now display owned vs unowned rewards in the challenge hub.
-- Challenge result summaries now include newly earned reward names.
+- Split the old Research Hut building into two separate upgrade tracks:
+  - `Research Lab`: increases RP/sec.
+  - `Finance Office`: reduces upgrade cash costs.
+- Added schema migration to map legacy `researchHutLevel` into both new tracks for fair save continuity.
+- Added stat-breakdown source visibility for:
+  - Research Lab base RP generation rate.
+  - Finance Office discount multiplier.
 
 ### Changed
-- Upgrades view layout cleanup:
-  - Ascension Challenges moved to the bottom and converted to a collapsible dropdown panel.
-  - Removed `CEO Emails` card from Upgrades.
-  - Removed `Upgrade Name Catalog` card from Upgrades.
-- Main page `Tree Harvest Upgrades` section is now collapsible via dropdown.
-- Challenge cards and objective trackers now use incremental DOM updates instead of full section HTML rebuilds each render cycle.
-- Documentation refreshed for challenge/reward progression:
-  - `docs/game-scaling-reference.txt`
-  - `docs/suggested-scaling.txt`
+- Building definitions updated:
+  - Removed `research_hut`.
+  - Added `research_lab` and `finance_office` with their own costs and levels.
+- Trees/Farms Buildings UI now shows separate rows/buttons for Research Lab and Finance Office.
+- Research discount pipeline now uses Finance Office only.
+- Research point generation now uses Research Lab only.
+- Prestige reset and state sanitization now reset/sanitize the two new building levels.
+- Game state schema version bumped to `10`.
 
 ### Fixed
-- Eliminated stale challenge reward UI references by fully using rank-based reward previews.
-- Improved challenge flow clarity around abandon/complete states and active run visibility.
-
-### Removed
-- Legacy changelog history entries from this file to start a clean 1.2.0 release baseline.
+- Removed coupling where one building level controlled both RP gain and discount simultaneously.
+- Preserved old saves without power loss by migrating legacy levels cleanly.

@@ -85,8 +85,12 @@ export function renderTabPanels() {
                 <button id="buyFertilizerLabBtn" type="button">Buy Fertilizer Lab</button>
               </div>
               <div class="building-row">
-                <p id="researchHutText">Research Hut Lv 0</p>
-                <button id="buyResearchHutBtn" type="button">Buy Research Hut</button>
+                <p id="researchLabText">Research Lab Lv 0</p>
+                <button id="buyResearchLabBtn" type="button">Buy Research Lab</button>
+              </div>
+              <div class="building-row">
+                <p id="financeOfficeText">Finance Office Lv 0</p>
+                <button id="buyFinanceOfficeBtn" type="button">Buy Finance Office</button>
               </div>
             </div>
           </div>

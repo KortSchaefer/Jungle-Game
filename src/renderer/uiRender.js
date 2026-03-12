@@ -299,10 +299,12 @@ export function mountUI(container) {
     hireWorkerBtn: container.querySelector("#hireWorkerBtn"),
     packingShedText: container.querySelector("#packingShedText"),
     fertilizerLabText: container.querySelector("#fertilizerLabText"),
-    researchHutText: container.querySelector("#researchHutText"),
+    researchLabText: container.querySelector("#researchLabText"),
+    financeOfficeText: container.querySelector("#financeOfficeText"),
     buyPackingShedBtn: container.querySelector("#buyPackingShedBtn"),
     buyFertilizerLabBtn: container.querySelector("#buyFertilizerLabBtn"),
-    buyResearchHutBtn: container.querySelector("#buyResearchHutBtn"),
+    buyResearchLabBtn: container.querySelector("#buyResearchLabBtn"),
+    buyFinanceOfficeBtn: container.querySelector("#buyFinanceOfficeBtn"),
     orchardText: container.querySelector("#orchardText"),
     orchardInfoText: container.querySelector("#orchardInfoText"),
     buyOrchardBtn: container.querySelector("#buyOrchardBtn"),
@@ -946,7 +948,8 @@ export function mountUI(container) {
   elements.hireWorkerBtn.addEventListener("click", () => hireWorker());
   elements.buyPackingShedBtn.addEventListener("click", () => buyBuilding("packing_shed"));
   elements.buyFertilizerLabBtn.addEventListener("click", () => buyBuilding("fertilizer_lab"));
-  elements.buyResearchHutBtn.addEventListener("click", () => buyBuilding("research_hut"));
+  elements.buyResearchLabBtn.addEventListener("click", () => buyBuilding("research_lab"));
+  elements.buyFinanceOfficeBtn.addEventListener("click", () => buyBuilding("finance_office"));
   elements.buyQuantumReactorBtn.addEventListener("click", () => buyWeirdScienceConverter("quantum_reactor"));
   elements.buyColliderBtn.addEventListener("click", () => buyWeirdScienceConverter("collider"));
   elements.buyContainmentBtn.addEventListener("click", () => buyWeirdScienceConverter("containment"));
@@ -1355,7 +1358,8 @@ export function mountUI(container) {
     const workerCost = getWorkerCost();
     const packingShedCost = getBuildingCost("packing_shed");
     const fertilizerLabCost = getBuildingCost("fertilizer_lab");
-    const researchHutCost = getBuildingCost("research_hut");
+    const researchLabCost = getBuildingCost("research_lab");
+    const financeOfficeCost = getBuildingCost("finance_office");
     const questStatus = getCurrentQuestStatus();
 
     setTextIfChanged(elements.bananasText, fmt(state.bananas));
@@ -1383,7 +1387,7 @@ export function mountUI(container) {
       );
       setTextIfChanged(
         elements.inspectorSourcesText,
-        `Sources: Prestige ${fmt(statBreakdown.sources.prestigeProduction)}x | PIP ${fmt(statBreakdown.sources.pipProduction)}x | Achievements ${fmt(statBreakdown.sources.achievementProduction)}x | Research rows ${fmt(statBreakdown.sources.researchRowProduction)}x | Evolution ${fmt(statBreakdown.sources.evolutionProduction)}x | CEO ${fmt(statBreakdown.sources.ceoGlobal)}x | Ascension ${fmt(statBreakdown.sources.rewardProduction)}x prod, ${fmt(statBreakdown.sources.rewardExportPrice)}x export | Rewards ${fmt(ascensionRewards.unlockedRewardIds.length)} | ${challengeLabel}`
+        `Sources: Prestige ${fmt(statBreakdown.sources.prestigeProduction)}x | PIP ${fmt(statBreakdown.sources.pipProduction)}x | Achievements ${fmt(statBreakdown.sources.achievementProduction)}x | Research rows ${fmt(statBreakdown.sources.researchRowProduction)}x | Evolution ${fmt(statBreakdown.sources.evolutionProduction)}x | CEO ${fmt(statBreakdown.sources.ceoGlobal)}x | Research Lab ${fmt(statBreakdown.sources.researchLabRatePerSecBase)}/s | Finance Discount ${fmt(statBreakdown.sources.financeOfficeDiscountMultiplier)}x | Ascension ${fmt(statBreakdown.sources.rewardProduction)}x prod, ${fmt(statBreakdown.sources.rewardExportPrice)}x export | Rewards ${fmt(ascensionRewards.unlockedRewardIds.length)} | ${challengeLabel}`
       );
     }
     const treeTextures = getTreeTextures(graphicsMode);
@@ -1528,11 +1532,17 @@ export function mountUI(container) {
     setDisabledIfChanged(elements.buyPackingShedBtn, state.cash < packingShedCost);
     setTextIfChanged(elements.buyFertilizerLabBtn, `Buy Fertilizer Lab ($${fmt(fertilizerLabCost)})`);
     setDisabledIfChanged(elements.buyFertilizerLabBtn, state.cash < fertilizerLabCost);
-    setTextIfChanged(elements.buyResearchHutBtn, `Buy Research Hut ($${fmt(researchHutCost)})`);
-    setDisabledIfChanged(elements.buyResearchHutBtn, state.cash < researchHutCost);
+    setTextIfChanged(elements.buyResearchLabBtn, `Buy Research Lab ($${fmt(researchLabCost)})`);
+    setDisabledIfChanged(elements.buyResearchLabBtn, state.cash < researchLabCost);
+    setTextIfChanged(elements.buyFinanceOfficeBtn, `Buy Finance Office ($${fmt(financeOfficeCost)})`);
+    setDisabledIfChanged(elements.buyFinanceOfficeBtn, state.cash < financeOfficeCost);
     setTextIfChanged(elements.packingShedText, `Packing Shed Lv ${fmt(state.packingShedLevel)} (+${fmt((state.packedExportBonusMultiplier - 1) * 100)}% export price)`);
     setTextIfChanged(elements.fertilizerLabText, `Fertilizer Lab Lv ${fmt(state.fertilizerLabLevel)} (tree output boost)`);
-    setTextIfChanged(elements.researchHutText, `Research Hut Lv ${fmt(state.researchHutLevel)} (upgrade discount)`);
+    setTextIfChanged(elements.researchLabText, `Research Lab Lv ${fmt(state.researchLabLevel)} (+${fmt(state.researchLabLevel * 0.06)} RP/sec base)`);
+    setTextIfChanged(
+      elements.financeOfficeText,
+      `Finance Office Lv ${fmt(state.financeOfficeLevel)} (upgrade costs x${fmt(Math.max(0.35, 1 - state.financeOfficeLevel * 0.03))})`
+    );
 
     const marketPrice = getMarketPricePerBanana();
     setTextIfChanged(elements.marketPriceText, `Market price: $${fmt(marketPrice)} per banana`);

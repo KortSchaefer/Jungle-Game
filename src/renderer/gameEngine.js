@@ -23,7 +23,7 @@ import {
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 9;
+export const GAME_STATE_SCHEMA_VERSION = 10;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
@@ -415,11 +415,18 @@ const BUILDING_TYPES = Object.freeze({
     baseCost: 1200,
     growth: BUILDING_COST_GROWTH,
   },
-  research_hut: {
-    id: "research_hut",
-    label: "Research Hut",
-    stateKey: "researchHutLevel",
-    baseCost: 1800,
+  research_lab: {
+    id: "research_lab",
+    label: "Research Lab",
+    stateKey: "researchLabLevel",
+    baseCost: 1500,
+    growth: BUILDING_COST_GROWTH,
+  },
+  finance_office: {
+    id: "finance_office",
+    label: "Finance Office",
+    stateKey: "financeOfficeLevel",
+    baseCost: 2100,
     growth: BUILDING_COST_GROWTH,
   },
 });
@@ -579,7 +586,8 @@ const DEFAULT_STATE = Object.freeze({
   orchardPickRatePerSecondPerOrchard: 1.4,
   packingShedLevel: 0,
   fertilizerLabLevel: 0,
-  researchHutLevel: 0,
+  researchLabLevel: 0,
+  financeOfficeLevel: 0,
   researchPoints: 0,
   bananaMatter: 0,
   exoticPeelParticles: 0,
@@ -1297,6 +1305,19 @@ function migrateLoadedState(rawState) {
     migrated.challengeRewardsUnlocked = getDefaultChallengeRewardsUnlocked();
     migrated.challengeLastResult = getDefaultChallengeLastResult();
   }
+  if (sourceSchemaVersion < 10) {
+    const legacyResearchHutLevel = clampNonNegative(Math.floor(Number(migrated.researchHutLevel) || 0));
+    migrated.researchLabLevel = clampNonNegative(
+      Number.isFinite(Number(migrated.researchLabLevel))
+        ? Math.floor(Number(migrated.researchLabLevel))
+        : legacyResearchHutLevel
+    );
+    migrated.financeOfficeLevel = clampNonNegative(
+      Number.isFinite(Number(migrated.financeOfficeLevel))
+        ? Math.floor(Number(migrated.financeOfficeLevel))
+        : legacyResearchHutLevel
+    );
+  }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
   return migrated;
@@ -1410,7 +1431,7 @@ function getFertilizerLabMultiplier() {
 
 function getResearchDiscountMultiplier() {
   const pipModifiers = getPipModifiers();
-  return Math.max(0.35, (1 - getBuildingLevel("research_hut") * 0.03) * pipModifiers.researchDiscountMultiplier);
+  return Math.max(0.35, (1 - getBuildingLevel("finance_office") * 0.03) * pipModifiers.researchDiscountMultiplier);
 }
 
 function getEffectiveCashCost(baseCost) {
@@ -2006,7 +2027,7 @@ export function getResearchPointsPerSecond() {
   const achievementMultipliers = getAchievementMultipliers();
   const challenge = resolveChallengeContext().resolved;
   const reward = resolveAscensionRewardContext().resolved;
-  return stabilizeNumber(gameState.researchHutLevel * 0.06 * achievementMultipliers.researchMultiplier * challenge.researchPointMultiplier * reward.researchPointMultiplier);
+  return stabilizeNumber(gameState.researchLabLevel * 0.06 * achievementMultipliers.researchMultiplier * challenge.researchPointMultiplier * reward.researchPointMultiplier);
 }
 
 function hasResearchPrerequisites(upgrade) {
@@ -2629,6 +2650,8 @@ export function getStatBreakdown() {
       rewardShippingCapacity: stabilizeNumber(reward.shippingCapacityMultiplier),
       rewardResearchRate: stabilizeNumber(reward.researchPointMultiplier),
       rewardContractsAdd: reward.maxActiveContractsAdd,
+      researchLabRatePerSecBase: stabilizeNumber(gameState.researchLabLevel * 0.06),
+      financeOfficeDiscountMultiplier: stabilizeNumber(Math.max(0.35, 1 - gameState.financeOfficeLevel * 0.03)),
     },
     challenge: {
       active: challengeContext.active,
@@ -3217,7 +3240,8 @@ export function applyLoadedState(loadedState = {}) {
   gameState.evolutionProductionMultiplier = Math.max(1, Number(gameState.evolutionProductionMultiplier) || 1);
   gameState.packingShedLevel = clampNonNegative(Math.floor(Number(gameState.packingShedLevel) || 0));
   gameState.fertilizerLabLevel = clampNonNegative(Math.floor(Number(gameState.fertilizerLabLevel) || 0));
-  gameState.researchHutLevel = clampNonNegative(Math.floor(Number(gameState.researchHutLevel) || 0));
+  gameState.researchLabLevel = clampNonNegative(Math.floor(Number(gameState.researchLabLevel) || 0));
+  gameState.financeOfficeLevel = clampNonNegative(Math.floor(Number(gameState.financeOfficeLevel) || 0));
   gameState.researchPoints = clampNonNegative(Number(gameState.researchPoints) || 0);
   gameState.bananaMatter = clampNonNegative(Number(gameState.bananaMatter) || 0);
   gameState.exoticPeelParticles = clampNonNegative(Number(gameState.exoticPeelParticles) || 0);
@@ -3770,7 +3794,8 @@ export function prestigeReset() {
   gameState.treeTierIndex = 0;
   gameState.packingShedLevel = 0;
   gameState.fertilizerLabLevel = 0;
-  gameState.researchHutLevel = 0;
+  gameState.researchLabLevel = 0;
+  gameState.financeOfficeLevel = 0;
   gameState.researchPoints = 0;
   gameState.workersBasePerSecond = DEFAULT_STATE.workersBasePerSecond;
   gameState.bananaMatter = 0;

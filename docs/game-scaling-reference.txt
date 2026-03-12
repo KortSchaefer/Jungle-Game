@@ -1,5 +1,5 @@
 JUNGLE GAME SCALING + PROGRESSION REFERENCE
-Source: renderer code (schemaVersion 9)
+Source: renderer code (schemaVersion 10)
 
 1) CORE ECONOMY FORMULAS
 
@@ -14,7 +14,8 @@ Source: renderer code (schemaVersion 9)
 - Building cost: baseCost * (growth ^ level)
   - Packing Shed: base 750, growth 1.35
   - Fertilizer Lab: base 1200, growth 1.35
-  - Research Hut: base 1800, growth 1.35
+  - Research Lab: base 1500, growth 1.35
+  - Finance Office: base 2100, growth 1.35
 
 - Orchard cost: orchardBaseCost * (orchardCostGrowth ^ orchardsOwned)
   - orchardBaseCost = 4000
@@ -83,11 +84,11 @@ Derived harvest modifiers from gameplay:
 - Fertilizer Lab:
   production support via harvest system (spawn/capacity improvements)
 
-- Research Hut:
-  upgrade cash discount multiplier = max(0.55, 1 - level * 0.03)
+- Finance Office:
+  upgrade cash discount multiplier = max(0.35, 1 - level * 0.03)
 
 - Research Points gain:
-  RP/sec = researchHutLevel * 0.06 * achievementResearchMultiplier
+  RP/sec = researchLabLevel * 0.06 * achievementResearchMultiplier * challengeResearchMultiplier * ascensionRewardResearchMultiplier
 
 4) FARM EVOLUTIONS (TREE TIERS)
 
@@ -381,7 +382,7 @@ Typical perk magnitudes are +1% to +5% multiplicative boosts.
 
 16) SAVE + MIGRATION NOTES
 
-- current schemaVersion = 8
+- current schemaVersion = 10
 - migration notes in code:
   - v3: worker base stat stabilization
   - v4: tree harvest state + harvest upgrades
@@ -389,6 +390,8 @@ Typical perk magnitudes are +1% to +5% multiplicative boosts.
   - v6: removed tree quality/health system
   - v7: auto-export fields
   - v8: PIP shop fields (rank map + spent totals)
+  - v9: Ascension challenge state + rewards
+  - v10: split Research Hut into Research Lab (RP) + Finance Office (discount)
 
 17) IMPORTANT EXPORT LIMIT INTERACTION
 
