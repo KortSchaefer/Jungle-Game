@@ -1,4 +1,4 @@
-import { getBlackjackHandValue, getCardDisplayLabel, getCasinoCardAsset } from "./blackjack.js";
+import { getCasinoCardAsset, getCardDisplayLabel } from "./blackjack.js";
 
 function renderCardMarkup(card, animate = false) {
   const asset = getCasinoCardAsset(card, "classic");
@@ -15,32 +15,8 @@ function renderCardMarkup(card, animate = false) {
   return `<div class="blackjack-card${animClass}" data-asset-key="${asset.assetKey}"><div class="blackjack-card-face">${getCardDisplayLabel(card)}</div></div>`;
 }
 
-export function renderBlackjackDealerMarkup(cards, options = {}) {
+export function renderBaccaratCardsMarkup(cards, options = {}) {
   const safeCards = Array.isArray(cards) ? cards : [];
   const animateLast = Boolean(options.animateLastCard);
   return `<div class="blackjack-card-strip">${safeCards.map((card, index) => renderCardMarkup(card, animateLast && index === safeCards.length - 1)).join("")}</div>`;
-}
-
-export function renderBlackjackPlayerHandsMarkup(hands, options = {}) {
-  const safeHands = Array.isArray(hands) ? hands : [];
-  const animateLast = Boolean(options.animateLastCard);
-  return safeHands
-    .map((hand, index) => {
-      const value = getBlackjackHandValue(hand.cards);
-      const stateBits = [];
-      if (hand.doubled) {
-        stateBits.push("Doubled");
-      }
-      if (hand.surrendered) {
-        stateBits.push("Surrendered");
-      }
-      if (hand.result) {
-        stateBits.push(hand.result);
-      }
-      return `<div class="blackjack-hand-row ${hand.isActive ? "is-active" : ""}">
-        <p class="buyer-name">Hand ${index + 1} | Total ${value.total}${stateBits.length ? ` | ${stateBits.join(", ")}` : ""}</p>
-        <div class="blackjack-card-strip">${hand.cards.map((card, cardIndex) => renderCardMarkup(card, animateLast && hand.isActive && cardIndex === hand.cards.length - 1)).join("")}</div>
-      </div>`;
-    })
-    .join("");
 }

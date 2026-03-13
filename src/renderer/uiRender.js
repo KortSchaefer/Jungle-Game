@@ -17,6 +17,7 @@ import {
   getBuyerCooldownRemainingSeconds,
   getBuyerEffectivePricePerBanana,
   getBuyerReputationPercent,
+  getBaccaratStatus,
   getBlackjackStatus,
   getBuildingCost,
   getBuildingMaxLevel,
@@ -27,6 +28,7 @@ import {
   getEffectiveUpgradeCost,
   getLiveEventStatus,
   getMarketPricePerBanana,
+  getMississippiStudStatus,
   getOrchardStatus,
   getPipUpgradeStatus,
   getNextTreeTier,
@@ -64,13 +66,20 @@ import {
   purchasePipUpgrade,
   purchaseUpgrade,
   resetAllProgress,
+  cancelBaccaratRound,
   cancelCasinoRound,
+  cancelMississippiStudRound,
   shakeTreeHarvest,
   sellBananas,
   splitBlackjack,
   standBlackjack,
+  startBaccaratRound,
   startBlackjackHand,
+  startMississippiStudHand,
   surrenderBlackjack,
+  placeMississippiStudStreetBet,
+  foldMississippiStud,
+  setCasinoActiveGame,
   takeInsuranceBlackjack,
   shipToBuyer,
   clickTreeBanana,
@@ -89,7 +98,8 @@ import { fetchLeaderboard, fetchLeaderboardMe, startLeaderboardSession, submitLe
 import { canChangeDisplayName, completeRegistration, loadUISettings, setUISettings, updateDisplayName } from "./settings.js";
 import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
 import { ascensionRewardById } from "./ascensionChallenges.js";
-import { renderBlackjackDealerMarkup, renderBlackjackPlayerHandsMarkup } from "./blackjackView.js";
+import { createCasinoAnimationController } from "./casinoAnimations.js";
+import { syncBaccaratCards, syncBlackjackDealer, syncBlackjackPlayerHands, syncStudCards } from "./casinoDomRenderer.js";
 import { TreeHarvestView } from "./treeHarvestView.js";
 import { renderCeoPanel } from "./components/ceoPanel.js";
 import { renderHudBar } from "./components/hudBar.js";
@@ -436,8 +446,12 @@ export function mountUI(container) {
     challengeHudTimerText: container.querySelector("#challengeHudTimerText"),
     casinoLockedPanel: container.querySelector("#casinoLockedPanel"),
     blackjackTableCard: container.querySelector("#blackjackTableCard"),
+    mississippiStudTableCard: container.querySelector("#mississippiStudTableCard"),
+    baccaratTableCard: container.querySelector("#baccaratTableCard"),
     casinoIntroText: container.querySelector("#casinoIntroText"),
     casinoBlackjackGameBtn: container.querySelector("#casinoBlackjackGameBtn"),
+    casinoMississippiStudGameBtn: container.querySelector("#casinoMississippiStudGameBtn"),
+    casinoBaccaratGameBtn: container.querySelector("#casinoBaccaratGameBtn"),
     blackjackStatusText: container.querySelector("#blackjackStatusText"),
     blackjackStakeText: container.querySelector("#blackjackStakeText"),
     blackjackDealerValueText: container.querySelector("#blackjackDealerValueText"),
@@ -445,6 +459,7 @@ export function mountUI(container) {
     blackjackPlayerValueText: container.querySelector("#blackjackPlayerValueText"),
     blackjackPlayerHands: container.querySelector("#blackjackPlayerHands"),
     blackjackBetInput: container.querySelector("#blackjackBetInput"),
+    blackjackMaxBetBtn: container.querySelector("#blackjackMaxBetBtn"),
     blackjackDealBtn: container.querySelector("#blackjackDealBtn"),
     blackjackInsuranceText: container.querySelector("#blackjackInsuranceText"),
     blackjackHitBtn: container.querySelector("#blackjackHitBtn"),
@@ -456,6 +471,36 @@ export function mountUI(container) {
     blackjackSurrenderBtn: container.querySelector("#blackjackSurrenderBtn"),
     blackjackCancelBtn: container.querySelector("#blackjackCancelBtn"),
     blackjackStatsList: container.querySelector("#blackjackStatsList"),
+    mississippiStudStatusText: container.querySelector("#mississippiStudStatusText"),
+    mississippiStudStakeText: container.querySelector("#mississippiStudStakeText"),
+    mississippiStudHandText: container.querySelector("#mississippiStudHandText"),
+    mississippiStudPlayerCards: container.querySelector("#mississippiStudPlayerCards"),
+    mississippiStudCommunityText: container.querySelector("#mississippiStudCommunityText"),
+    mississippiStudCommunityCards: container.querySelector("#mississippiStudCommunityCards"),
+    mississippiStudAnteInput: container.querySelector("#mississippiStudAnteInput"),
+    mississippiStudDealBtn: container.querySelector("#mississippiStudDealBtn"),
+    mississippiStudCommittedText: container.querySelector("#mississippiStudCommittedText"),
+    mississippiStudBet1xBtn: container.querySelector("#mississippiStudBet1xBtn"),
+    mississippiStudBet2xBtn: container.querySelector("#mississippiStudBet2xBtn"),
+    mississippiStudBet3xBtn: container.querySelector("#mississippiStudBet3xBtn"),
+    mississippiStudFoldBtn: container.querySelector("#mississippiStudFoldBtn"),
+    mississippiStudCancelBtn: container.querySelector("#mississippiStudCancelBtn"),
+    mississippiStudStatsList: container.querySelector("#mississippiStudStatsList"),
+    mississippiStudPaytableList: container.querySelector("#mississippiStudPaytableList"),
+    baccaratStatusText: container.querySelector("#baccaratStatusText"),
+    baccaratStakeText: container.querySelector("#baccaratStakeText"),
+    baccaratPlayerValueText: container.querySelector("#baccaratPlayerValueText"),
+    baccaratBankerValueText: container.querySelector("#baccaratBankerValueText"),
+    baccaratPlayerCards: container.querySelector("#baccaratPlayerCards"),
+    baccaratBankerCards: container.querySelector("#baccaratBankerCards"),
+    baccaratBetInput: container.querySelector("#baccaratBetInput"),
+    baccaratMaxBetBtn: container.querySelector("#baccaratMaxBetBtn"),
+    baccaratResultText: container.querySelector("#baccaratResultText"),
+    baccaratBetPlayerBtn: container.querySelector("#baccaratBetPlayerBtn"),
+    baccaratBetBankerBtn: container.querySelector("#baccaratBetBankerBtn"),
+    baccaratBetTieBtn: container.querySelector("#baccaratBetTieBtn"),
+    baccaratStatsList: container.querySelector("#baccaratStatsList"),
+    baccaratPayoutsList: container.querySelector("#baccaratPayoutsList"),
   };
 
   let numberFormatMode = settings.numberFormat;
@@ -464,6 +509,22 @@ export function mountUI(container) {
   let inspectorPanelVisible = false;
   let treeDebugVisible = false;
   let dismissedChallengeResultAt = 0;
+  let blackjackBetDraft = 100;
+  let mississippiStudAnteDraft = 10;
+  let baccaratBetDraft = 25;
+  let renderUI = () => {};
+  let renderQueued = false;
+  const requestCasinoRender = () => {
+    if (renderQueued) {
+      return;
+    }
+    renderQueued = true;
+    setTimeout(() => {
+      renderQueued = false;
+      renderUI(gameState);
+    }, 0);
+  };
+  const casinoAnimations = createCasinoAnimationController(requestCasinoRender);
   const appShell = container.querySelector(".app-shell");
   const applyThemeSettings = (sourceSettings = settings) => {
     const topBarTheme = String(sourceSettings.topBarTheme || "forest");
@@ -504,6 +565,15 @@ export function mountUI(container) {
   }
   if (elements.graphicsModeSelect) {
     elements.graphicsModeSelect.value = graphicsMode;
+  }
+  if (elements.blackjackBetInput) {
+    blackjackBetDraft = Math.max(1, Math.floor(Number(elements.blackjackBetInput.value) || blackjackBetDraft));
+  }
+  if (elements.mississippiStudAnteInput) {
+    mississippiStudAnteDraft = Math.max(1, Math.floor(Number(elements.mississippiStudAnteInput.value) || mississippiStudAnteDraft));
+  }
+  if (elements.baccaratBetInput) {
+    baccaratBetDraft = Math.max(1, Math.floor(Number(elements.baccaratBetInput.value) || baccaratBetDraft));
   }
   elements.soundToggle.checked = settings.soundEnabled;
   if (elements.treeDebugToggle) {
@@ -685,6 +755,21 @@ export function mountUI(container) {
   if (elements.toggleCasinoBtn) {
     elements.toggleCasinoBtn.addEventListener("click", () => {
       setTopView("casino", true);
+    });
+  }
+  if (elements.casinoBlackjackGameBtn) {
+    elements.casinoBlackjackGameBtn.addEventListener("click", () => {
+      setCasinoActiveGame("blackjack");
+    });
+  }
+  if (elements.casinoMississippiStudGameBtn) {
+    elements.casinoMississippiStudGameBtn.addEventListener("click", () => {
+      setCasinoActiveGame("mississippi_stud");
+    });
+  }
+  if (elements.casinoBaccaratGameBtn) {
+    elements.casinoBaccaratGameBtn.addEventListener("click", () => {
+      setCasinoActiveGame("baccarat");
     });
   }
 
@@ -1137,6 +1222,17 @@ export function mountUI(container) {
       startBlackjackHand(elements.blackjackBetInput?.value);
     });
   }
+  if (elements.blackjackBetInput) {
+    elements.blackjackBetInput.addEventListener("input", () => {
+      blackjackBetDraft = Math.max(1, Math.floor(Number(elements.blackjackBetInput.value) || blackjackBetDraft));
+    });
+  }
+  if (elements.blackjackMaxBetBtn) {
+    elements.blackjackMaxBetBtn.addEventListener("click", () => {
+      blackjackBetDraft = Math.max(1, Math.floor(Number(gameState.cash) || 1));
+      setValueIfChanged(elements.blackjackBetInput, blackjackBetDraft);
+    });
+  }
 
   if (elements.blackjackHitBtn) {
     elements.blackjackHitBtn.addEventListener("click", () => {
@@ -1183,6 +1279,67 @@ export function mountUI(container) {
   if (elements.blackjackCancelBtn) {
     elements.blackjackCancelBtn.addEventListener("click", () => {
       cancelCasinoRound("manual_cancel");
+    });
+  }
+  if (elements.mississippiStudDealBtn) {
+    elements.mississippiStudDealBtn.addEventListener("click", () => {
+      startMississippiStudHand(elements.mississippiStudAnteInput?.value);
+    });
+  }
+  if (elements.mississippiStudAnteInput) {
+    elements.mississippiStudAnteInput.addEventListener("input", () => {
+      mississippiStudAnteDraft = Math.max(1, Math.floor(Number(elements.mississippiStudAnteInput.value) || mississippiStudAnteDraft));
+    });
+  }
+  if (elements.mississippiStudBet1xBtn) {
+    elements.mississippiStudBet1xBtn.addEventListener("click", () => {
+      placeMississippiStudStreetBet(1);
+    });
+  }
+  if (elements.mississippiStudBet2xBtn) {
+    elements.mississippiStudBet2xBtn.addEventListener("click", () => {
+      placeMississippiStudStreetBet(2);
+    });
+  }
+  if (elements.mississippiStudBet3xBtn) {
+    elements.mississippiStudBet3xBtn.addEventListener("click", () => {
+      placeMississippiStudStreetBet(3);
+    });
+  }
+  if (elements.mississippiStudFoldBtn) {
+    elements.mississippiStudFoldBtn.addEventListener("click", () => {
+      foldMississippiStud();
+    });
+  }
+  if (elements.mississippiStudCancelBtn) {
+    elements.mississippiStudCancelBtn.addEventListener("click", () => {
+      cancelMississippiStudRound("manual_cancel");
+    });
+  }
+  if (elements.baccaratBetInput) {
+    elements.baccaratBetInput.addEventListener("input", () => {
+      baccaratBetDraft = Math.max(1, Math.floor(Number(elements.baccaratBetInput.value) || baccaratBetDraft));
+    });
+  }
+  if (elements.baccaratMaxBetBtn) {
+    elements.baccaratMaxBetBtn.addEventListener("click", () => {
+      baccaratBetDraft = Math.max(1, Math.floor(Number(gameState.cash) || 1));
+      setValueIfChanged(elements.baccaratBetInput, baccaratBetDraft);
+    });
+  }
+  if (elements.baccaratBetPlayerBtn) {
+    elements.baccaratBetPlayerBtn.addEventListener("click", () => {
+      startBaccaratRound({ betChoice: "player", betAmount: elements.baccaratBetInput?.value });
+    });
+  }
+  if (elements.baccaratBetBankerBtn) {
+    elements.baccaratBetBankerBtn.addEventListener("click", () => {
+      startBaccaratRound({ betChoice: "banker", betAmount: elements.baccaratBetInput?.value });
+    });
+  }
+  if (elements.baccaratBetTieBtn) {
+    elements.baccaratBetTieBtn.addEventListener("click", () => {
+      startBaccaratRound({ betChoice: "tie", betAmount: elements.baccaratBetInput?.value });
     });
   }
 
@@ -1465,7 +1622,7 @@ export function mountUI(container) {
     ensureChallengeCard(challenge.id);
   });
 
-  const renderUI = (state) => {
+  renderUI = (state) => {
     const fmt = (value) => formatGameNumber(value, numberFormatMode);
 
     const bananasPerSecond = getTotalBananasPerSecond();
@@ -1486,6 +1643,14 @@ export function mountUI(container) {
     const questStatus = getCurrentQuestStatus();
     const casinoStatus = getCasinoStatus();
     const blackjackStatus = getBlackjackStatus();
+    const mississippiStudStatus = getMississippiStudStatus();
+    const baccaratStatus = getBaccaratStatus();
+    casinoAnimations.syncBlackjack(blackjackStatus);
+    casinoAnimations.syncStud(mississippiStudStatus);
+    casinoAnimations.syncBaccarat(baccaratStatus);
+    const visibleBlackjackStatus = casinoAnimations.getVisibleBlackjackStatus(blackjackStatus);
+    const visibleMississippiStudStatus = casinoAnimations.getVisibleStudStatus(mississippiStudStatus);
+    const visibleBaccaratStatus = casinoAnimations.getVisibleBaccaratStatus(baccaratStatus);
 
     if (settings.activeTopView === "casino" && !casinoStatus.unlocked) {
       setTopView("main", true);
@@ -1508,8 +1673,19 @@ export function mountUI(container) {
       elements.casinoLockedPanel.setAttribute("aria-hidden", String(casinoStatus.unlocked));
     }
     if (elements.blackjackTableCard) {
-      elements.blackjackTableCard.classList.toggle("is-hidden", !casinoStatus.unlocked);
-      elements.blackjackTableCard.setAttribute("aria-hidden", String(!casinoStatus.unlocked));
+      const hidden = !casinoStatus.unlocked || casinoStatus.activeGameId !== "blackjack";
+      elements.blackjackTableCard.classList.toggle("is-hidden", hidden);
+      elements.blackjackTableCard.setAttribute("aria-hidden", String(hidden));
+    }
+    if (elements.mississippiStudTableCard) {
+      const hidden = !casinoStatus.unlocked || !casinoStatus.mississippiStudUnlocked || casinoStatus.activeGameId !== "mississippi_stud";
+      elements.mississippiStudTableCard.classList.toggle("is-hidden", hidden);
+      elements.mississippiStudTableCard.setAttribute("aria-hidden", String(hidden));
+    }
+    if (elements.baccaratTableCard) {
+      const hidden = !casinoStatus.unlocked || !casinoStatus.baccaratUnlocked || casinoStatus.activeGameId !== "baccarat";
+      elements.baccaratTableCard.classList.toggle("is-hidden", hidden);
+      elements.baccaratTableCard.setAttribute("aria-hidden", String(hidden));
     }
     if (elements.casinoIntroText) {
       setTextIfChanged(
@@ -1520,18 +1696,32 @@ export function mountUI(container) {
       );
     }
     if (elements.casinoBlackjackGameBtn) {
-      setTextIfChanged(elements.casinoBlackjackGameBtn, casinoStatus.unlocked ? "Blackjack Table Open" : "Blackjack Locked");
+      setTextIfChanged(elements.casinoBlackjackGameBtn, "Blackjack");
       setDisabledIfChanged(elements.casinoBlackjackGameBtn, !casinoStatus.unlocked);
+      elements.casinoBlackjackGameBtn.classList.toggle("is-active", casinoStatus.activeGameId === "blackjack");
+    }
+    if (elements.casinoMississippiStudGameBtn) {
+      setTextIfChanged(elements.casinoMississippiStudGameBtn, casinoStatus.mississippiStudUnlocked ? "Mississippi Stud" : "Mississippi Stud (20 PIP)");
+      setDisabledIfChanged(elements.casinoMississippiStudGameBtn, !casinoStatus.unlocked || !casinoStatus.mississippiStudUnlocked);
+      elements.casinoMississippiStudGameBtn.classList.toggle("is-active", casinoStatus.activeGameId === "mississippi_stud");
+    }
+    if (elements.casinoBaccaratGameBtn) {
+      setTextIfChanged(elements.casinoBaccaratGameBtn, casinoStatus.baccaratUnlocked ? "Baccarat" : "Baccarat (20 PIP)");
+      setDisabledIfChanged(elements.casinoBaccaratGameBtn, !casinoStatus.unlocked || !casinoStatus.baccaratUnlocked);
+      elements.casinoBaccaratGameBtn.classList.toggle("is-active", casinoStatus.activeGameId === "baccarat");
     }
     if (casinoStatus.unlocked) {
-      setTextIfChanged(elements.blackjackStatusText, blackjackStatus.handResultSummary || "Place a bet and deal a hand.");
+      setTextIfChanged(
+        elements.blackjackStatusText,
+        visibleBlackjackStatus.animationBusy ? "Dealing cards..." : (blackjackStatus.handResultSummary || "Place a bet and deal a hand.")
+      );
       setTextIfChanged(
         elements.blackjackStakeText,
         `Main Bet: $${fmt(blackjackStatus.mainBet)} | Insurance: $${fmt(blackjackStatus.insuranceBet)} | Active Stake: $${fmt(blackjackStatus.outstandingStake)}`
       );
       setTextIfChanged(
         elements.blackjackDealerValueText,
-        blackjackStatus.dealerValue == null ? "Dealer Total: Hidden" : `Dealer Total: ${fmt(blackjackStatus.dealerValue.total)}`
+        blackjackStatus.dealerValue == null || visibleBlackjackStatus.animationBusy ? "Dealer Total: Hidden" : `Dealer Total: ${fmt(blackjackStatus.dealerValue.total)}`
       );
       const activePlayerHand = blackjackStatus.playerHands.find((hand) => hand.isActive) || blackjackStatus.playerHands[blackjackStatus.activeHandIndex] || null;
       setTextIfChanged(
@@ -1544,23 +1734,24 @@ export function mountUI(container) {
           ? `Insurance offered: stake up to $${fmt(Math.floor(Math.max(0, Number(blackjackStatus.mainBet) || 0) / 2))}`
           : "Insurance: Not currently offered"
       );
-      setHtmlIfChanged(elements.blackjackDealerHands, renderBlackjackDealerMarkup(blackjackStatus.dealerCards));
-      setHtmlIfChanged(elements.blackjackPlayerHands, renderBlackjackPlayerHandsMarkup(blackjackStatus.playerHands));
+      syncBlackjackDealer(elements.blackjackDealerHands, visibleBlackjackStatus);
+      syncBlackjackPlayerHands(elements.blackjackPlayerHands, visibleBlackjackStatus);
       if (elements.blackjackBetInput && document.activeElement !== elements.blackjackBetInput) {
-        const suggestedBet = Math.max(1, Math.min(Math.floor(Number(state.cash) || 0), Math.max(1, Math.floor(Number(blackjackStatus.mainBet) || 25))));
-        setValueIfChanged(elements.blackjackBetInput, suggestedBet);
+        const clampedDraft = Math.max(1, Math.floor(Number(blackjackBetDraft) || 1));
+        setValueIfChanged(elements.blackjackBetInput, clampedDraft);
       }
-      setDisabledIfChanged(elements.blackjackDealBtn, !blackjackStatus.canDeal);
-      setDisabledIfChanged(elements.blackjackHitBtn, !blackjackStatus.canHit);
-      setDisabledIfChanged(elements.blackjackStandBtn, !blackjackStatus.canStand);
-      setDisabledIfChanged(elements.blackjackDoubleBtn, !blackjackStatus.canDouble);
-      setDisabledIfChanged(elements.blackjackSplitBtn, !blackjackStatus.canSplit);
-      setDisabledIfChanged(elements.blackjackInsuranceBtn, !blackjackStatus.canTakeInsurance);
-      setDisabledIfChanged(elements.blackjackDeclineInsuranceBtn, !blackjackStatus.canDeclineInsurance);
-      setDisabledIfChanged(elements.blackjackSurrenderBtn, !blackjackStatus.canSurrender);
+      setDisabledIfChanged(elements.blackjackMaxBetBtn, Math.floor(Number(state.cash) || 0) <= 0);
+      setDisabledIfChanged(elements.blackjackDealBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canDeal);
+      setDisabledIfChanged(elements.blackjackHitBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canHit);
+      setDisabledIfChanged(elements.blackjackStandBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canStand);
+      setDisabledIfChanged(elements.blackjackDoubleBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canDouble);
+      setDisabledIfChanged(elements.blackjackSplitBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canSplit);
+      setDisabledIfChanged(elements.blackjackInsuranceBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canTakeInsurance);
+      setDisabledIfChanged(elements.blackjackDeclineInsuranceBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canDeclineInsurance);
+      setDisabledIfChanged(elements.blackjackSurrenderBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canSurrender);
       setDisabledIfChanged(
         elements.blackjackCancelBtn,
-        blackjackStatus.tablePhase === "idle" || blackjackStatus.tablePhase === "settled"
+        visibleBlackjackStatus.animationBusy || blackjackStatus.tablePhase === "idle" || blackjackStatus.tablePhase === "settled"
       );
       setHtmlIfChanged(
         elements.blackjackStatsList,
@@ -1580,6 +1771,123 @@ export function mountUI(container) {
         ]
           .map(([label, value]) => `<div class="buyer-card"><p class="buyer-name">${label}</p><p>${value}</p></div>`)
           .join("")
+      );
+
+      if (casinoStatus.mississippiStudUnlocked) {
+        setTextIfChanged(
+          elements.mississippiStudStatusText,
+          visibleMississippiStudStatus.animationBusy ? "Revealing the next street..." : (mississippiStudStatus.resultText || "Place an ante to start a hand.")
+        );
+        setTextIfChanged(
+          elements.mississippiStudStakeText,
+          `Ante: $${fmt(mississippiStudStatus.anteBet)} | Total Action: $${fmt(mississippiStudStatus.totalCommitted)}`
+        );
+        setTextIfChanged(
+          elements.mississippiStudHandText,
+          mississippiStudStatus.handRank
+            ? `Current Hand: ${mississippiStudStatus.handRank}${mississippiStudStatus.totalPayout > 0 ? ` | Paid $${fmt(mississippiStudStatus.totalPayout)}` : ""}`
+            : "Current Hand: In progress"
+        );
+        setTextIfChanged(
+          elements.mississippiStudCommunityText,
+          `Street ${fmt(mississippiStudStatus.currentDecisionIndex + 1)} | Bets ${mississippiStudStatus.streetBets.map((bet) => `$${fmt(bet)}`).join(" / ")}`
+        );
+        setTextIfChanged(elements.mississippiStudCommittedText, `Committed: $${fmt(mississippiStudStatus.totalCommitted)}`);
+        syncStudCards(elements.mississippiStudPlayerCards, visibleMississippiStudStatus.playerCards, visibleMississippiStudStatus.visiblePlayerCount);
+        syncStudCards(elements.mississippiStudCommunityCards, visibleMississippiStudStatus.communityCards, visibleMississippiStudStatus.visibleCommunityFaceUpCount);
+        if (elements.mississippiStudAnteInput && document.activeElement !== elements.mississippiStudAnteInput) {
+          const clampedDraft = Math.max(1, Math.floor(Number(mississippiStudAnteDraft) || 1));
+          setValueIfChanged(elements.mississippiStudAnteInput, clampedDraft);
+        }
+        setDisabledIfChanged(elements.mississippiStudDealBtn, visibleMississippiStudStatus.animationBusy || !mississippiStudStatus.canDeal);
+        setDisabledIfChanged(elements.mississippiStudBet1xBtn, visibleMississippiStudStatus.animationBusy || !mississippiStudStatus.canBet1x);
+        setDisabledIfChanged(elements.mississippiStudBet2xBtn, visibleMississippiStudStatus.animationBusy || !mississippiStudStatus.canBet2x);
+        setDisabledIfChanged(elements.mississippiStudBet3xBtn, visibleMississippiStudStatus.animationBusy || !mississippiStudStatus.canBet3x);
+        setDisabledIfChanged(elements.mississippiStudFoldBtn, visibleMississippiStudStatus.animationBusy || !mississippiStudStatus.canFold);
+        setDisabledIfChanged(
+          elements.mississippiStudCancelBtn,
+          visibleMississippiStudStatus.animationBusy || ["idle", "settled", "folded"].includes(mississippiStudStatus.tablePhase)
+        );
+        setHtmlIfChanged(
+          elements.mississippiStudStatsList,
+          [
+            ["Hands", mississippiStudStatus.stats.handsPlayed],
+            ["Wins", mississippiStudStatus.stats.handsWon],
+            ["Losses", mississippiStudStatus.stats.handsLost],
+            ["Wagered", `$${fmt(mississippiStudStatus.stats.totalCashWagered)}`],
+            ["Won", `$${fmt(mississippiStudStatus.stats.totalCashWon)}`],
+            ["Largest Ante", `$${fmt(mississippiStudStatus.stats.largestAnte)}`],
+            ["Largest Payout", `$${fmt(mississippiStudStatus.stats.largestPayout)}`],
+            ["Best Streak", fmt(mississippiStudStatus.stats.bestWinStreak)],
+          ]
+            .map(([label, value]) => `<div class="buyer-card"><p class="buyer-name">${label}</p><p>${value}</p></div>`)
+            .join("")
+        );
+        setHtmlIfChanged(
+          elements.mississippiStudPaytableList,
+          mississippiStudStatus.paytable
+            .map((entry) => `<div class="buyer-card"><p class="buyer-name">${entry.label}</p><p>${fmt(entry.payoutMultiplier)}:1</p></div>`)
+            .join("")
+        );
+      }
+
+      setTextIfChanged(
+        elements.baccaratStatusText,
+        visibleBaccaratStatus.animationBusy ? "Dealing baccarat cards..." : (baccaratStatus.resultText || "Choose a side and place a wager.")
+      );
+      setTextIfChanged(
+        elements.baccaratStakeText,
+        `Bet: $${fmt(baccaratStatus.betAmount)} | Side: ${baccaratStatus.betChoice ? baccaratStatus.betChoice[0].toUpperCase() + baccaratStatus.betChoice.slice(1) : "-"}`
+      );
+      setTextIfChanged(
+        elements.baccaratPlayerValueText,
+        baccaratStatus.playerTotal == null ? "Player Total: -" : `Player Total: ${fmt(baccaratStatus.playerTotal)}`
+      );
+      setTextIfChanged(
+        elements.baccaratBankerValueText,
+        baccaratStatus.bankerTotal == null ? "Banker Total: -" : `Banker Total: ${fmt(baccaratStatus.bankerTotal)}`
+      );
+      setTextIfChanged(
+        elements.baccaratResultText,
+        baccaratStatus.result && visibleBaccaratStatus.showResult
+          ? `Result: ${baccaratStatus.result[0].toUpperCase() + baccaratStatus.result.slice(1)} | Paid $${fmt(baccaratStatus.payoutAmount)}${baccaratStatus.commissionPaid > 0 ? ` | Commission $${fmt(baccaratStatus.commissionPaid)}` : ""}`
+          : `Payouts: Player ${fmt(baccaratStatus.payouts.player)}:1 | Banker ${fmt(baccaratStatus.payouts.banker)}:1 minus ${fmt(baccaratStatus.payouts.bankerCommissionRate * 100)}% | Tie ${fmt(baccaratStatus.payouts.tie)}:1`
+      );
+      syncBaccaratCards(elements.baccaratPlayerCards, visibleBaccaratStatus.playerCards, visibleBaccaratStatus.visiblePlayerCount);
+      syncBaccaratCards(elements.baccaratBankerCards, visibleBaccaratStatus.bankerCards, visibleBaccaratStatus.visibleBankerCount);
+      if (elements.baccaratBetInput && document.activeElement !== elements.baccaratBetInput) {
+        const clampedDraft = Math.max(1, Math.floor(Number(baccaratBetDraft) || 1));
+        setValueIfChanged(elements.baccaratBetInput, clampedDraft);
+      }
+      setDisabledIfChanged(elements.baccaratMaxBetBtn, Math.floor(Number(state.cash) || 0) <= 0);
+      setDisabledIfChanged(elements.baccaratBetPlayerBtn, visibleBaccaratStatus.animationBusy || !baccaratStatus.canBet);
+      setDisabledIfChanged(elements.baccaratBetBankerBtn, visibleBaccaratStatus.animationBusy || !baccaratStatus.canBet);
+      setDisabledIfChanged(elements.baccaratBetTieBtn, visibleBaccaratStatus.animationBusy || !baccaratStatus.canBet);
+      setHtmlIfChanged(
+        elements.baccaratStatsList,
+        [
+          ["Hands", baccaratStatus.stats.handsPlayed],
+          ["Wins", baccaratStatus.stats.handsWon],
+          ["Losses", baccaratStatus.stats.handsLost],
+          ["Pushes", baccaratStatus.stats.handsPushed],
+          ["Player Wins", baccaratStatus.stats.playerWins],
+          ["Banker Wins", baccaratStatus.stats.bankerWins],
+          ["Ties", baccaratStatus.stats.tieResults],
+          ["Naturals", baccaratStatus.stats.naturals],
+          ["Third Card", baccaratStatus.stats.thirdCardRounds],
+          ["Wagered", `$${fmt(baccaratStatus.stats.totalCashWagered)}`],
+          ["Won", `$${fmt(baccaratStatus.stats.totalCashWon)}`],
+          ["Commission", `$${fmt(baccaratStatus.stats.totalCommissionPaid)}`],
+          ["Best Streak", fmt(baccaratStatus.stats.bestWinStreak)],
+        ].map(([label, value]) => `<div class="buyer-card"><p class="buyer-name">${label}</p><p>${value}</p></div>`).join("")
+      );
+      setHtmlIfChanged(
+        elements.baccaratPayoutsList,
+        [
+          ["Player Bet", `${fmt(baccaratStatus.payouts.player)}:1`],
+          ["Banker Bet", `${fmt(baccaratStatus.payouts.banker)}:1 - ${fmt(baccaratStatus.payouts.bankerCommissionRate * 100)}% commission`],
+          ["Tie Bet", `${fmt(baccaratStatus.payouts.tie)}:1`],
+        ].map(([label, value]) => `<div class="buyer-card"><p class="buyer-name">${label}</p><p>${value}</p></div>`).join("")
       );
     }
     if (inspectorPanelVisible) {

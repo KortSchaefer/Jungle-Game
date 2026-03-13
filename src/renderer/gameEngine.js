@@ -35,10 +35,31 @@ import {
   sanitizeBlackjackHand,
   sanitizeCasinoState,
 } from "./blackjack.js";
+import {
+  createShuffledMississippiStudDeck,
+  evaluateMississippiStudHand,
+  getDefaultMississippiStudState,
+  getMississippiStudCommittedWager,
+  getVisibleMississippiStudCommunityCards,
+  MISSISSIPPI_STUD_PAYTABLE,
+  MISSISSIPPI_STUD_PHASES,
+} from "./mississippiStud.js";
+import {
+  BACCARAT_BET_CHOICES,
+  BACCARAT_PAYOUTS,
+  BACCARAT_PHASES,
+  createShuffledBaccaratDeck,
+  getBaccaratHandTotal,
+  getDefaultBaccaratState,
+  isBaccaratNatural,
+  resolveBaccaratWinner,
+  shouldBankerDrawBaccarat,
+  shouldPlayerDrawBaccarat,
+} from "./baccarat.js";
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 11;
+export const GAME_STATE_SCHEMA_VERSION = 13;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
@@ -386,6 +407,28 @@ export const pipUpgrades = Object.freeze([
     baseCostPip: 20,
     costGrowth: 2.0,
     effect: { casinoUnlocked: true },
+  },
+  {
+    id: "pip_qol_mississippi_stud",
+    name: "Riverboat License",
+    description: "Unlock Mississippi Stud in the Monkey Casino.",
+    category: "QoL",
+    maxRank: 1,
+    baseCostPip: 20,
+    costGrowth: 2.0,
+    unlockCondition: { type: "totalBananasEarned", value: 100_000 },
+    effect: { mississippiStudUnlocked: true },
+  },
+  {
+    id: "pip_qol_baccarat",
+    name: "High Roller License",
+    description: "Unlock Baccarat in the Monkey Casino.",
+    category: "QoL",
+    maxRank: 1,
+    baseCostPip: 20,
+    costGrowth: 2.0,
+    unlockCondition: { type: "totalBananasEarned", value: 250_000 },
+    effect: { baccaratUnlocked: true },
   },
 ]);
 
@@ -1349,6 +1392,12 @@ function migrateLoadedState(rawState) {
   if (sourceSchemaVersion < 11) {
     migrated.casino = getDefaultCasinoState();
   }
+  if (sourceSchemaVersion < 13) {
+    migrated.casino = {
+      ...getDefaultCasinoState(),
+      ...(migrated.casino || {}),
+    };
+  }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
   return migrated;
@@ -1913,6 +1962,8 @@ export function getPipModifiers() {
     researchDiscountMultiplier: 1,
     orchardPickMultiplier: 1,
     casinoUnlocked: false,
+    mississippiStudUnlocked: false,
+    baccaratUnlocked: false,
   };
 
   pipUpgrades.forEach((upgrade) => {
@@ -1969,6 +2020,12 @@ export function getPipModifiers() {
     if (effect.casinoUnlocked) {
       modifiers.casinoUnlocked = true;
     }
+    if (effect.mississippiStudUnlocked) {
+      modifiers.mississippiStudUnlocked = true;
+    }
+    if (effect.baccaratUnlocked) {
+      modifiers.baccaratUnlocked = true;
+    }
   });
 
   return {
@@ -1988,6 +2045,8 @@ export function getPipModifiers() {
     researchDiscountMultiplier: Math.max(0.5, stabilizeNumber(modifiers.researchDiscountMultiplier)),
     orchardPickMultiplier: stabilizeNumber(modifiers.orchardPickMultiplier),
     casinoUnlocked: Boolean(modifiers.casinoUnlocked),
+    mississippiStudUnlocked: Boolean(modifiers.mississippiStudUnlocked),
+    baccaratUnlocked: Boolean(modifiers.baccaratUnlocked),
   };
 }
 
@@ -2415,6 +2474,26 @@ function getCasinoBlackjackState() {
   return gameState.casino.blackjack;
 }
 
+function getCasinoMississippiStudState() {
+  if (!gameState.casino || typeof gameState.casino !== "object") {
+    gameState.casino = getDefaultCasinoState();
+  }
+  if (!gameState.casino.mississippiStud || typeof gameState.casino.mississippiStud !== "object") {
+    gameState.casino.mississippiStud = getDefaultMississippiStudState();
+  }
+  return gameState.casino.mississippiStud;
+}
+
+function getCasinoBaccaratState() {
+  if (!gameState.casino || typeof gameState.casino !== "object") {
+    gameState.casino = getDefaultCasinoState();
+  }
+  if (!gameState.casino.baccarat || typeof gameState.casino.baccarat !== "object") {
+    gameState.casino.baccarat = getDefaultBaccaratState();
+  }
+  return gameState.casino.baccarat;
+}
+
 function createBlackjackHand(cards, wager, options = {}) {
   return sanitizeBlackjackHand({
     id: options.id || `hand-${Math.random().toString(36).slice(2, 8)}`,
@@ -2466,14 +2545,22 @@ function updateLargestSingleBet(stats, amount) {
   stats.largestSingleBet = Math.max(stats.largestSingleBet, Math.max(0, Number(amount) || 0));
 }
 
-function addCasinoWager(amount) {
+function addCasinoWager(amount, gameKey = "blackjack") {
   const safeAmount = Math.max(0, Number(amount) || 0);
   if (safeAmount <= 0) {
     return;
   }
-  gameState.casino.blackjackStats.totalCashWagered = addStable(gameState.casino.blackjackStats.totalCashWagered, safeAmount);
+  if (gameKey === "mississippi_stud") {
+    gameState.casino.mississippiStudStats.totalCashWagered = addStable(gameState.casino.mississippiStudStats.totalCashWagered, safeAmount);
+    gameState.casino.mississippiStudStats.largestAnte = Math.max(gameState.casino.mississippiStudStats.largestAnte, safeAmount);
+  } else if (gameKey === "baccarat") {
+    gameState.casino.baccaratStats.totalCashWagered = addStable(gameState.casino.baccaratStats.totalCashWagered, safeAmount);
+    updateLargestSingleBet(gameState.casino.baccaratStats, safeAmount);
+  } else {
+    gameState.casino.blackjackStats.totalCashWagered = addStable(gameState.casino.blackjackStats.totalCashWagered, safeAmount);
+    updateLargestSingleBet(gameState.casino.blackjackStats, safeAmount);
+  }
   gameState.casino.casinoStats.totalCasinoCashWagered = addStable(gameState.casino.casinoStats.totalCasinoCashWagered, safeAmount);
-  updateLargestSingleBet(gameState.casino.blackjackStats, safeAmount);
 }
 
 function finalizeBlackjackHandStats(hand, netChange) {
@@ -2608,8 +2695,9 @@ function resetBlackjackRound(blackjackState, reasonText = "") {
   blackjackState.lastPlayedAt = Date.now();
 }
 
-function syncFavoriteCasinoGame() {
-  gameState.casino.casinoStats.favoriteGameId = "blackjack";
+function syncFavoriteCasinoGame(gameId = "blackjack") {
+  gameState.casino.activeGameId = gameId;
+  gameState.casino.casinoStats.favoriteGameId = gameId;
 }
 
 function resolveBlackjackDealerTurn(blackjackState) {
@@ -2641,12 +2729,35 @@ function canSurrenderCurrentBlackjackHand(blackjackState) {
 
 export function getCasinoStatus() {
   const casino = gameState.casino || getDefaultCasinoState();
+  const pip = getPipModifiers();
   return {
     unlocked: Boolean(casino.unlocked),
+    mississippiStudUnlocked: Boolean(pip.mississippiStudUnlocked),
+    baccaratUnlocked: Boolean(pip.baccaratUnlocked),
     activeGameId: String(casino.activeGameId || "blackjack"),
     casinoStats: { ...casino.casinoStats },
     blackjackStats: { ...casino.blackjackStats },
+    mississippiStudStats: { ...casino.mississippiStudStats },
+    baccaratStats: { ...casino.baccaratStats },
   };
+}
+
+export function setCasinoActiveGame(gameId) {
+  if (!gameState.casino.unlocked) {
+    return false;
+  }
+  if (gameId === "mississippi_stud" && !getPipModifiers().mississippiStudUnlocked) {
+    return false;
+  }
+  if (gameId === "baccarat" && !getPipModifiers().baccaratUnlocked) {
+    return false;
+  }
+  if (!["blackjack", "mississippi_stud", "baccarat"].includes(gameId)) {
+    return false;
+  }
+  syncFavoriteCasinoGame(gameId);
+  notifyListeners();
+  return true;
 }
 
 export function getBlackjackStatus() {
@@ -2689,6 +2800,12 @@ export function getBlackjackStatus() {
 }
 
 export function cancelCasinoRound(reason = "round_cancelled") {
+  if (gameState.casino.activeGameId === "mississippi_stud") {
+    return cancelMississippiStudRound(reason);
+  }
+  if (gameState.casino.activeGameId === "baccarat") {
+    return cancelBaccaratRound(reason);
+  }
   const blackjackState = getCasinoBlackjackState();
   const outstandingStake = getOutstandingBlackjackStake(blackjackState);
   if (outstandingStake > 0) {
@@ -2713,8 +2830,8 @@ export function startBlackjackHand(betCash) {
   }
 
   removeCash(safeBet);
-  addCasinoWager(safeBet);
-  syncFavoriteCasinoGame();
+  addCasinoWager(safeBet, "blackjack");
+  syncFavoriteCasinoGame("blackjack");
   gameState.casino.casinoStats.totalGamesPlayed += 1;
   blackjackState.deck = createShuffledBlackjackDeck();
   blackjackState.dealerCards = [drawBlackjackCard(blackjackState, true), drawBlackjackCard(blackjackState, false)];
@@ -2766,7 +2883,7 @@ export function takeInsuranceBlackjack() {
     return false;
   }
   removeCash(insuranceStake);
-  addCasinoWager(insuranceStake);
+  addCasinoWager(insuranceStake, "blackjack");
   blackjackState.insuranceBet = insuranceStake;
   blackjackState.offeredInsurance = false;
   gameState.casino.blackjackStats.insuranceBetsPlaced += 1;
@@ -2823,7 +2940,7 @@ export function doubleDownBlackjack() {
     return false;
   }
   removeCash(hand.wager);
-  addCasinoWager(hand.wager);
+  addCasinoWager(hand.wager, "blackjack");
   hand.wager = stabilizeNumber(hand.wager * 2);
   hand.doubled = true;
   hand.actionCount += 1;
@@ -2855,7 +2972,7 @@ export function splitBlackjack() {
 
   const splitIndex = blackjackState.activeHandIndex;
   removeCash(hand.wager);
-  addCasinoWager(hand.wager);
+  addCasinoWager(hand.wager, "blackjack");
   gameState.casino.blackjackStats.splitHandsCreated += 1;
   const isAces = hand.cards[0]?.rank === "A";
   const leftHand = createBlackjackHand([hand.cards[0], drawBlackjackCard(blackjackState, true)], hand.wager, {
@@ -2901,6 +3018,424 @@ export function surrenderBlackjack() {
   if (blackjackState.tablePhase === BLACKJACK_PHASES.dealer_turn) {
     resolveBlackjackDealerTurn(blackjackState);
   }
+  notifyListeners();
+  return true;
+}
+
+function drawMississippiStudCard(studState, faceUp = true) {
+  if (!Array.isArray(studState.deck) || studState.deck.length <= 0) {
+    studState.deck = createShuffledMississippiStudDeck();
+  }
+  const card = studState.deck.shift();
+  return { ...card, faceUp };
+}
+
+function resetMississippiStudRound(studState, reasonText = "") {
+  studState.tablePhase = MISSISSIPPI_STUD_PHASES.idle;
+  studState.deck = [];
+  studState.playerCards = [];
+  studState.communityCards = [];
+  studState.revealedCommunityCount = 0;
+  studState.anteBet = 0;
+  studState.streetBets = [0, 0, 0];
+  studState.currentDecisionIndex = 0;
+  studState.handRank = "";
+  studState.payoutMultiplier = 0;
+  studState.totalPayout = 0;
+  studState.resultText = reasonText;
+  studState.lastPlayedAt = Date.now();
+  studState.folded = false;
+}
+
+function getMississippiStudPhaseForDecision(index) {
+  return [MISSISSIPPI_STUD_PHASES.first_decision, MISSISSIPPI_STUD_PHASES.second_decision, MISSISSIPPI_STUD_PHASES.third_decision][index] || MISSISSIPPI_STUD_PHASES.settled;
+}
+
+function finalizeMississippiStudStats(result, totalWager, netChange) {
+  const stats = gameState.casino.mississippiStudStats;
+  stats.handsPlayed += 1;
+  if (result.qualifies) {
+    stats.handsWon += 1;
+    stats.currentWinStreak += 1;
+    stats.bestWinStreak = Math.max(stats.bestWinStreak, stats.currentWinStreak);
+  } else {
+    stats.handsLost += 1;
+    stats.currentWinStreak = 0;
+  }
+  if (netChange > 0) {
+    stats.totalCashWon = addStable(stats.totalCashWon, netChange);
+    gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, netChange);
+    stats.largestPayout = Math.max(stats.largestPayout, netChange + totalWager);
+  } else if (netChange < 0) {
+    stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(netChange));
+  }
+
+  const rankStatKey = {
+    royal_flush: "royalFlushes",
+    straight_flush: "straightFlushes",
+    four_kind: "fourKind",
+    full_house: "fullHouses",
+    flush: "flushes",
+    straight: "straights",
+    three_kind: "threeKind",
+    two_pair: "twoPair",
+    high_pair: "highPairs",
+  }[result.rankId];
+  if (rankStatKey) {
+    stats[rankStatKey] += 1;
+  }
+}
+
+function settleMississippiStudRound(studState) {
+  const result = evaluateMississippiStudHand(studState);
+  const totalWager = getMississippiStudCommittedWager(studState);
+  const payoutMultiplier = Math.max(0, Number(result.payoutMultiplier) || 0);
+  const totalReturn = result.qualifies ? stabilizeNumber(totalWager * (1 + payoutMultiplier)) : 0;
+  if (totalReturn > 0) {
+    addCash(totalReturn);
+  }
+  studState.revealedCommunityCount = 3;
+  studState.handRank = result.rankName;
+  studState.payoutMultiplier = payoutMultiplier;
+  studState.totalPayout = totalReturn;
+  studState.tablePhase = MISSISSIPPI_STUD_PHASES.settled;
+  studState.resultText = result.qualifies
+    ? `${result.rankName} pays ${payoutMultiplier}:1 on total action.`
+    : `${result.rankName} does not qualify.`;
+  const netChange = totalReturn - totalWager;
+  finalizeMississippiStudStats(result, totalWager, netChange);
+}
+
+function advanceMississippiStudRound(studState) {
+  if (studState.currentDecisionIndex >= 2) {
+    settleMississippiStudRound(studState);
+    return;
+  }
+  studState.revealedCommunityCount = Math.max(studState.revealedCommunityCount, studState.currentDecisionIndex + 1);
+  studState.currentDecisionIndex += 1;
+  if (studState.currentDecisionIndex >= 3) {
+    settleMississippiStudRound(studState);
+    return;
+  }
+  studState.tablePhase = getMississippiStudPhaseForDecision(studState.currentDecisionIndex);
+  studState.resultText = `Street ${studState.currentDecisionIndex + 1}: choose 1x, 2x, or 3x ante.`;
+}
+
+export function getMississippiStudStatus() {
+  const studState = getCasinoMississippiStudState();
+  const fullHand = [...studState.playerCards, ...studState.communityCards];
+  const evaluation = studState.tablePhase === MISSISSIPPI_STUD_PHASES.settled ? evaluateMississippiStudHand(studState) : null;
+  const currentPhase = studState.tablePhase;
+  const canDeal = gameState.casino.unlocked && [MISSISSIPPI_STUD_PHASES.idle, MISSISSIPPI_STUD_PHASES.settled, MISSISSIPPI_STUD_PHASES.folded].includes(currentPhase);
+  const canBetStreet = [MISSISSIPPI_STUD_PHASES.first_decision, MISSISSIPPI_STUD_PHASES.second_decision, MISSISSIPPI_STUD_PHASES.third_decision].includes(currentPhase);
+  const anteBet = Math.max(0, Number(studState.anteBet) || 0);
+  return {
+    unlocked: Boolean(gameState.casino.unlocked),
+    activeGameId: gameState.casino.activeGameId,
+    tablePhase: currentPhase,
+    playerCards: studState.playerCards.map((card) => ({ ...card, faceUp: true })),
+    communityCards: getVisibleMississippiStudCommunityCards(studState),
+    anteBet,
+    streetBets: [...studState.streetBets],
+    currentDecisionIndex: studState.currentDecisionIndex,
+    totalCommitted: getMississippiStudCommittedWager(studState),
+    handRank: studState.handRank,
+    payoutMultiplier: studState.payoutMultiplier,
+    totalPayout: studState.totalPayout,
+    resultText: studState.resultText,
+    lastPlayedAt: studState.lastPlayedAt,
+    canDeal,
+    canBet1x: canBetStreet && gameState.cash >= anteBet,
+    canBet2x: canBetStreet && gameState.cash >= anteBet * 2,
+    canBet3x: canBetStreet && gameState.cash >= anteBet * 3,
+    canFold: canBetStreet,
+    evaluation,
+    fullHand,
+    stats: { ...gameState.casino.mississippiStudStats },
+    paytable: MISSISSIPPI_STUD_PAYTABLE,
+  };
+}
+
+export function startMississippiStudHand(anteBet) {
+  const pip = getPipModifiers();
+  if (!gameState.casino.unlocked || !pip.mississippiStudUnlocked) {
+    return { success: false, reason: "casino_locked" };
+  }
+  const safeAnte = Math.max(0, Math.floor(Number(anteBet) || 0));
+  if (safeAnte <= 0 || safeAnte > gameState.cash) {
+    return { success: false, reason: "invalid_bet" };
+  }
+  const studState = getCasinoMississippiStudState();
+  if (![MISSISSIPPI_STUD_PHASES.idle, MISSISSIPPI_STUD_PHASES.settled, MISSISSIPPI_STUD_PHASES.folded].includes(studState.tablePhase)) {
+    return { success: false, reason: "round_already_active" };
+  }
+  removeCash(safeAnte);
+  addCasinoWager(safeAnte, "mississippi_stud");
+  syncFavoriteCasinoGame("mississippi_stud");
+  gameState.casino.casinoStats.totalGamesPlayed += 1;
+  studState.deck = createShuffledMississippiStudDeck();
+  studState.playerCards = [drawMississippiStudCard(studState, true), drawMississippiStudCard(studState, true)];
+  studState.communityCards = [drawMississippiStudCard(studState, false), drawMississippiStudCard(studState, false), drawMississippiStudCard(studState, false)];
+  studState.revealedCommunityCount = 0;
+  studState.anteBet = safeAnte;
+  studState.streetBets = [0, 0, 0];
+  studState.currentDecisionIndex = 0;
+  studState.handRank = "";
+  studState.payoutMultiplier = 0;
+  studState.totalPayout = 0;
+  studState.tablePhase = MISSISSIPPI_STUD_PHASES.first_decision;
+  studState.resultText = "Street 1: choose 1x, 2x, or 3x ante.";
+  studState.lastPlayedAt = Date.now();
+  studState.folded = false;
+  notifyListeners();
+  return { success: true };
+}
+
+export function placeMississippiStudStreetBet(multiplier) {
+  const studState = getCasinoMississippiStudState();
+  if (![MISSISSIPPI_STUD_PHASES.first_decision, MISSISSIPPI_STUD_PHASES.second_decision, MISSISSIPPI_STUD_PHASES.third_decision].includes(studState.tablePhase)) {
+    return false;
+  }
+  const safeMultiplier = [1, 2, 3].includes(Number(multiplier)) ? Number(multiplier) : 0;
+  if (safeMultiplier <= 0) {
+    return false;
+  }
+  const wager = Math.max(0, Number(studState.anteBet) || 0) * safeMultiplier;
+  if (gameState.cash < wager) {
+    return false;
+  }
+  removeCash(wager);
+  addCasinoWager(wager, "mississippi_stud");
+  studState.streetBets[studState.currentDecisionIndex] = wager;
+  advanceMississippiStudRound(studState);
+  notifyListeners();
+  return true;
+}
+
+export function foldMississippiStud() {
+  const studState = getCasinoMississippiStudState();
+  if (![MISSISSIPPI_STUD_PHASES.first_decision, MISSISSIPPI_STUD_PHASES.second_decision, MISSISSIPPI_STUD_PHASES.third_decision].includes(studState.tablePhase)) {
+    return false;
+  }
+  const totalWager = getMississippiStudCommittedWager(studState);
+  studState.revealedCommunityCount = 3;
+  studState.tablePhase = MISSISSIPPI_STUD_PHASES.folded;
+  studState.handRank = "Folded";
+  studState.payoutMultiplier = 0;
+  studState.totalPayout = 0;
+  studState.folded = true;
+  studState.resultText = "Hand folded. All committed wagers lost.";
+  finalizeMississippiStudStats({ qualifies: false, rankId: "folded" }, totalWager, -totalWager);
+  notifyListeners();
+  return true;
+}
+
+export function cancelMississippiStudRound(reason = "round_cancelled") {
+  const studState = getCasinoMississippiStudState();
+  const refund = getMississippiStudCommittedWager(studState);
+  if (refund > 0 && ![MISSISSIPPI_STUD_PHASES.settled, MISSISSIPPI_STUD_PHASES.folded, MISSISSIPPI_STUD_PHASES.idle].includes(studState.tablePhase)) {
+    addCash(refund);
+  }
+  resetMississippiStudRound(studState, `Round cancelled: ${String(reason).replace(/_/g, " ")}`);
+  notifyListeners();
+  return true;
+}
+
+function drawBaccaratCard(baccaratState) {
+  if (!Array.isArray(baccaratState.deck) || baccaratState.deck.length <= 0) {
+    baccaratState.deck = createShuffledBaccaratDeck();
+  }
+  return { ...baccaratState.deck.shift(), faceUp: true };
+}
+
+function resetBaccaratRound(baccaratState, reasonText = "") {
+  baccaratState.tablePhase = BACCARAT_PHASES.idle;
+  baccaratState.deck = [];
+  baccaratState.playerCards = [];
+  baccaratState.bankerCards = [];
+  baccaratState.betChoice = "";
+  baccaratState.betAmount = 0;
+  baccaratState.result = "";
+  baccaratState.resultText = reasonText;
+  baccaratState.payoutAmount = 0;
+  baccaratState.commissionPaid = 0;
+  baccaratState.lastPlayedAt = Date.now();
+}
+
+function finalizeBaccaratStats({ betChoice, winner, betAmount, payoutAmount, commissionPaid, natural, usedThirdCard }) {
+  const stats = gameState.casino.baccaratStats;
+  stats.handsPlayed += 1;
+  if (betChoice === BACCARAT_BET_CHOICES.player) {
+    stats.playerBetsPlaced += 1;
+  } else if (betChoice === BACCARAT_BET_CHOICES.banker) {
+    stats.bankerBetsPlaced += 1;
+  } else if (betChoice === BACCARAT_BET_CHOICES.tie) {
+    stats.tieBetsPlaced += 1;
+  }
+  if (winner === BACCARAT_BET_CHOICES.player) {
+    stats.playerWins += 1;
+  } else if (winner === BACCARAT_BET_CHOICES.banker) {
+    stats.bankerWins += 1;
+  } else if (winner === BACCARAT_BET_CHOICES.tie) {
+    stats.tieResults += 1;
+  }
+  if (natural) {
+    stats.naturals += 1;
+  }
+  if (usedThirdCard) {
+    stats.thirdCardRounds += 1;
+  }
+
+  const net = payoutAmount - betAmount;
+  if (payoutAmount > 0) {
+    stats.totalCashWon = addStable(stats.totalCashWon, Math.max(0, net));
+    gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, Math.max(0, net));
+    stats.largestSingleWin = Math.max(stats.largestSingleWin, Math.max(0, net));
+  }
+  if (net < 0) {
+    stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(net));
+  }
+  stats.totalCommissionPaid = addStable(stats.totalCommissionPaid, commissionPaid);
+
+  if (betChoice === winner) {
+    stats.handsWon += 1;
+    stats.currentWinStreak += 1;
+    stats.bestWinStreak = Math.max(stats.bestWinStreak, stats.currentWinStreak);
+  } else if (winner === BACCARAT_BET_CHOICES.tie && betChoice !== BACCARAT_BET_CHOICES.tie) {
+    stats.handsPushed += 1;
+  } else {
+    stats.handsLost += 1;
+    stats.currentWinStreak = 0;
+  }
+}
+
+function resolveBaccaratPayout(betChoice, winner, betAmount) {
+  if (winner === BACCARAT_BET_CHOICES.tie && betChoice !== BACCARAT_BET_CHOICES.tie) {
+    return { payoutAmount: betAmount, commissionPaid: 0, resultText: "Tie pushes Player and Banker bets." };
+  }
+  if (betChoice !== winner) {
+    return { payoutAmount: 0, commissionPaid: 0, resultText: `${winner === "tie" ? "Tie" : winner[0].toUpperCase() + winner.slice(1)} wins.` };
+  }
+  if (betChoice === BACCARAT_BET_CHOICES.player) {
+    return {
+      payoutAmount: stabilizeNumber(betAmount * (1 + BACCARAT_PAYOUTS.player)),
+      commissionPaid: 0,
+      resultText: "Player wins 1:1.",
+    };
+  }
+  if (betChoice === BACCARAT_BET_CHOICES.banker) {
+    const commissionPaid = stabilizeNumber(betAmount * BACCARAT_PAYOUTS.bankerCommissionRate);
+    const netWin = stabilizeNumber(betAmount * BACCARAT_PAYOUTS.banker - commissionPaid);
+    return {
+      payoutAmount: stabilizeNumber(betAmount + netWin),
+      commissionPaid,
+      resultText: `Banker wins 1:1 minus ${Math.round(BACCARAT_PAYOUTS.bankerCommissionRate * 100)}% commission.`,
+    };
+  }
+  return {
+    payoutAmount: stabilizeNumber(betAmount * (1 + BACCARAT_PAYOUTS.tie)),
+    commissionPaid: 0,
+    resultText: `Tie pays ${BACCARAT_PAYOUTS.tie}:1.`,
+  };
+}
+
+export function getBaccaratStatus() {
+  const baccaratState = getCasinoBaccaratState();
+  const playerTotal = baccaratState.playerCards.length ? getBaccaratHandTotal(baccaratState.playerCards) : null;
+  const bankerTotal = baccaratState.bankerCards.length ? getBaccaratHandTotal(baccaratState.bankerCards) : null;
+  return {
+    unlocked: Boolean(gameState.casino.unlocked),
+    activeGameId: gameState.casino.activeGameId,
+    tablePhase: baccaratState.tablePhase,
+    playerCards: baccaratState.playerCards.map((card) => ({ ...card, faceUp: true })),
+    bankerCards: baccaratState.bankerCards.map((card) => ({ ...card, faceUp: true })),
+    betChoice: baccaratState.betChoice,
+    betAmount: baccaratState.betAmount,
+    result: baccaratState.result,
+    resultText: baccaratState.resultText,
+    payoutAmount: baccaratState.payoutAmount,
+    commissionPaid: baccaratState.commissionPaid,
+    lastPlayedAt: baccaratState.lastPlayedAt,
+    playerTotal,
+    bankerTotal,
+    canBet: Boolean(gameState.casino.unlocked),
+    stats: { ...gameState.casino.baccaratStats },
+    payouts: { ...BACCARAT_PAYOUTS },
+  };
+}
+
+export function startBaccaratRound({ betChoice, betAmount }) {
+  const pip = getPipModifiers();
+  if (!gameState.casino.unlocked || !pip.baccaratUnlocked) {
+    return { success: false, reason: "casino_locked" };
+  }
+  if (!Object.values(BACCARAT_BET_CHOICES).includes(betChoice)) {
+    return { success: false, reason: "invalid_choice" };
+  }
+  const safeBet = Math.max(0, Math.floor(Number(betAmount) || 0));
+  if (safeBet <= 0 || safeBet > gameState.cash) {
+    return { success: false, reason: "invalid_bet" };
+  }
+  const baccaratState = getCasinoBaccaratState();
+  removeCash(safeBet);
+  addCasinoWager(safeBet, "baccarat");
+  syncFavoriteCasinoGame("baccarat");
+  gameState.casino.casinoStats.totalGamesPlayed += 1;
+
+  baccaratState.deck = createShuffledBaccaratDeck();
+  baccaratState.playerCards = [drawBaccaratCard(baccaratState), drawBaccaratCard(baccaratState)];
+  baccaratState.bankerCards = [drawBaccaratCard(baccaratState), drawBaccaratCard(baccaratState)];
+  baccaratState.betChoice = betChoice;
+  baccaratState.betAmount = safeBet;
+  baccaratState.result = "";
+  baccaratState.payoutAmount = 0;
+  baccaratState.commissionPaid = 0;
+  baccaratState.lastPlayedAt = Date.now();
+
+  let usedThirdCard = false;
+  const natural = isBaccaratNatural(baccaratState.playerCards, baccaratState.bankerCards);
+  if (!natural) {
+    let playerThirdCard = null;
+    if (shouldPlayerDrawBaccarat(baccaratState.playerCards)) {
+      playerThirdCard = drawBaccaratCard(baccaratState);
+      baccaratState.playerCards.push(playerThirdCard);
+      usedThirdCard = true;
+    }
+    if (shouldBankerDrawBaccarat(baccaratState.bankerCards, playerThirdCard)) {
+      baccaratState.bankerCards.push(drawBaccaratCard(baccaratState));
+      usedThirdCard = true;
+    }
+  }
+
+  const resolution = resolveBaccaratWinner(baccaratState.playerCards, baccaratState.bankerCards);
+  const payout = resolveBaccaratPayout(betChoice, resolution.winner, safeBet);
+  if (payout.payoutAmount > 0) {
+    addCash(payout.payoutAmount);
+  }
+  baccaratState.result = resolution.winner;
+  baccaratState.resultText = payout.resultText;
+  baccaratState.payoutAmount = payout.payoutAmount;
+  baccaratState.commissionPaid = payout.commissionPaid;
+  baccaratState.tablePhase = BACCARAT_PHASES.settled;
+  finalizeBaccaratStats({
+    betChoice,
+    winner: resolution.winner,
+    betAmount: safeBet,
+    payoutAmount: payout.payoutAmount,
+    commissionPaid: payout.commissionPaid,
+    natural,
+    usedThirdCard,
+  });
+  notifyListeners();
+  return { success: true };
+}
+
+export function cancelBaccaratRound(reason = "round_cancelled") {
+  const baccaratState = getCasinoBaccaratState();
+  if (baccaratState.betAmount > 0 && baccaratState.tablePhase !== BACCARAT_PHASES.settled) {
+    addCash(baccaratState.betAmount);
+  }
+  resetBaccaratRound(baccaratState, `Round cancelled: ${String(reason).replace(/_/g, " ")}`);
   notifyListeners();
   return true;
 }

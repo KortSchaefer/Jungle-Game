@@ -126,8 +126,12 @@ export function getDefaultCasinoState() {
     unlocked: false,
     activeGameId: "blackjack",
     blackjack: getDefaultBlackjackState(),
+    mississippiStud: getDefaultMississippiStudState(),
+    baccarat: getDefaultBaccaratState(),
     casinoStats: getDefaultCasinoStats(),
     blackjackStats: getDefaultBlackjackStats(),
+    mississippiStudStats: getDefaultMississippiStudStats(),
+    baccaratStats: getDefaultBaccaratStats(),
   };
 }
 
@@ -282,9 +286,25 @@ export function sanitizeCasinoState(rawState) {
   const defaults = getDefaultCasinoState();
   return {
     unlocked: Boolean(rawState?.unlocked),
-    activeGameId: String(rawState?.activeGameId || defaults.activeGameId),
+    activeGameId: ["blackjack", "mississippi_stud", "baccarat"].includes(rawState?.activeGameId) ? rawState.activeGameId : defaults.activeGameId,
     blackjack: sanitizeBlackjackState(rawState?.blackjack),
+    mississippiStud: sanitizeMississippiStudState(rawState?.mississippiStud),
+    baccarat: sanitizeBaccaratState(rawState?.baccarat),
     casinoStats: sanitizeCasinoStats(rawState?.casinoStats),
     blackjackStats: sanitizeBlackjackStats(rawState?.blackjackStats),
+    mississippiStudStats: sanitizeMississippiStudStats(rawState?.mississippiStudStats),
+    baccaratStats: sanitizeBaccaratStats(rawState?.baccaratStats),
   };
 }
+import {
+  getDefaultMississippiStudState,
+  getDefaultMississippiStudStats,
+  sanitizeMississippiStudState,
+  sanitizeMississippiStudStats,
+} from "./mississippiStud.js";
+import {
+  getDefaultBaccaratState,
+  getDefaultBaccaratStats,
+  sanitizeBaccaratState,
+  sanitizeBaccaratStats,
+} from "./baccarat.js";

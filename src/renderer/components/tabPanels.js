@@ -275,6 +275,8 @@ export function renderTabPanels() {
             </div>
             <div class="casino-game-nav">
               <button id="casinoBlackjackGameBtn" type="button">Blackjack</button>
+              <button id="casinoMississippiStudGameBtn" type="button">Mississippi Stud</button>
+              <button id="casinoBaccaratGameBtn" type="button">Baccarat</button>
               <button type="button" disabled>More Games Soon</button>
             </div>
           </div>
@@ -313,6 +315,7 @@ export function renderTabPanels() {
                   <p class="buyer-name">Betting</p>
                   <div class="blackjack-chip-controls">
                     <input id="blackjackBetInput" type="number" min="1" step="1" value="100" />
+                    <button id="blackjackMaxBetBtn" type="button">Max</button>
                     <button id="blackjackDealBtn" type="button">Deal</button>
                   </div>
                   <p id="blackjackInsuranceText">Insurance: $0</p>
@@ -337,6 +340,120 @@ export function renderTabPanels() {
             <details class="blackjack-stats-details">
               <summary>Player Stats</summary>
               <div id="blackjackStatsList" class="compact-grid blackjack-stats-grid"></div>
+            </details>
+          </div>
+
+          <div id="mississippiStudTableCard" class="ui-card casino-card-table is-hidden">
+            <div class="casino-table-head">
+              <div>
+                <h3>Mississippi Stud</h3>
+                <p id="mississippiStudStatusText">Place an ante to start a hand.</p>
+              </div>
+              <p id="mississippiStudStakeText">Ante: $0</p>
+            </div>
+
+            <div class="casino-table-layout">
+              <div class="blackjack-main">
+                <div class="blackjack-section">
+                  <p class="buyer-name">Player Cards</p>
+                  <p id="mississippiStudHandText">Current Hand: -</p>
+                  <div id="mississippiStudPlayerCards" class="blackjack-hand-zone"></div>
+                </div>
+
+                <div class="blackjack-section">
+                  <p class="buyer-name">Community Cards</p>
+                  <p id="mississippiStudCommunityText">Reveal order: 3rd, 4th, 5th street</p>
+                  <div id="mississippiStudCommunityCards" class="blackjack-hand-zone"></div>
+                </div>
+              </div>
+
+              <aside class="blackjack-side">
+                <div class="buyer-card">
+                  <p class="buyer-name">Ante</p>
+                  <div class="blackjack-chip-controls">
+                    <input id="mississippiStudAnteInput" type="number" min="1" step="1" value="10" />
+                    <button id="mississippiStudDealBtn" type="button">Deal</button>
+                  </div>
+                  <p id="mississippiStudCommittedText">Committed: $0</p>
+                </div>
+
+                <div class="buyer-card">
+                  <p class="buyer-name">Street Action</p>
+                  <div class="compact-grid">
+                    <button id="mississippiStudBet1xBtn" type="button">Bet 1x</button>
+                    <button id="mississippiStudBet2xBtn" type="button">Bet 2x</button>
+                    <button id="mississippiStudBet3xBtn" type="button">Bet 3x</button>
+                    <button id="mississippiStudFoldBtn" type="button">Fold</button>
+                    <button id="mississippiStudCancelBtn" type="button">Cancel Round</button>
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <details class="blackjack-stats-details">
+              <summary>Stud Stats</summary>
+              <div id="mississippiStudStatsList" class="compact-grid blackjack-stats-grid"></div>
+            </details>
+
+            <details class="blackjack-stats-details">
+              <summary>Paytable</summary>
+              <div id="mississippiStudPaytableList" class="compact-grid blackjack-stats-grid"></div>
+            </details>
+          </div>
+
+          <div id="baccaratTableCard" class="ui-card casino-card-table is-hidden">
+            <div class="casino-table-head">
+              <div>
+                <h3>Baccarat</h3>
+                <p id="baccaratStatusText">Choose a side and place a wager.</p>
+              </div>
+              <p id="baccaratStakeText">Bet: $0</p>
+            </div>
+
+            <div class="casino-table-layout">
+              <div class="blackjack-main">
+                <div class="blackjack-section">
+                  <p class="buyer-name">Player</p>
+                  <p id="baccaratPlayerValueText">Player Total: -</p>
+                  <div id="baccaratPlayerCards" class="blackjack-hand-zone"></div>
+                </div>
+
+                <div class="blackjack-section">
+                  <p class="buyer-name">Banker</p>
+                  <p id="baccaratBankerValueText">Banker Total: -</p>
+                  <div id="baccaratBankerCards" class="blackjack-hand-zone"></div>
+                </div>
+              </div>
+
+              <aside class="blackjack-side">
+                <div class="buyer-card">
+                  <p class="buyer-name">Wager</p>
+                  <div class="blackjack-chip-controls">
+                    <input id="baccaratBetInput" type="number" min="1" step="1" value="25" />
+                    <button id="baccaratMaxBetBtn" type="button">Max</button>
+                  </div>
+                  <p id="baccaratResultText">Bet Player, Banker, or Tie.</p>
+                </div>
+
+                <div class="buyer-card">
+                  <p class="buyer-name">Bets</p>
+                  <div class="compact-grid">
+                    <button id="baccaratBetPlayerBtn" type="button">Bet Player</button>
+                    <button id="baccaratBetBankerBtn" type="button">Bet Banker</button>
+                    <button id="baccaratBetTieBtn" type="button">Bet Tie</button>
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <details class="blackjack-stats-details">
+              <summary>Baccarat Stats</summary>
+              <div id="baccaratStatsList" class="compact-grid blackjack-stats-grid"></div>
+            </details>
+
+            <details class="blackjack-stats-details">
+              <summary>Payouts</summary>
+              <div id="baccaratPayoutsList" class="compact-grid blackjack-stats-grid"></div>
             </details>
           </div>
         </div>

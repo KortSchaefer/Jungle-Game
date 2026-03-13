@@ -2,7 +2,7 @@
 
 `Jungle Game` is an Electron idle / incremental game built around interactive tree harvesting, workers, exports, research, prestige, and ascension challenges.
 
-The app uses an Electron shell for desktop packaging and a Vite-powered renderer. The current release line is `1.2.1`.
+The app uses an Electron shell for desktop packaging and a Vite-powered renderer. The current release line is `1.3.1`.
 
 ## What Is In The Game
 
@@ -84,36 +84,6 @@ Common outputs:
 
 - `release/win-unpacked/`
 - `release/Jungle Game Setup <version>.exe`
-
-## Publishing Updates
-
-The repo is configured for `electron-builder` GitHub publishing.
-
-To publish a release:
-
-1. Set a GitHub token in PowerShell:
-
-```powershell
-$env:GH_TOKEN="your_github_token"
-```
-
-2. Run:
-
-```powershell
-npm run dist:publish
-```
-
-There is also a release helper script:
-
-```powershell
-npm run release:publish
-```
-
-Notes:
-
-- The app is configured to publish to the `KortSchaefer/Jungle-Game` GitHub repo.
-- The installer icon is currently loaded from `src/main/legacy graphics/monkey.png`.
-- Electron auto-update only works if releases are published correctly and the installed client is using a published build.
 
 ## Saves
 
@@ -197,10 +167,6 @@ npm run build:renderer
 npm run dist
 ```
 
-### Backend port already in use
-
-If the backend says port `8787` is already in use, stop the existing process or change the backend port in its environment config.
-
 ## Notes For Contributors
 
 - Prefer `rg` for searching through the project.
@@ -210,6 +176,6 @@ If the backend says port `8787` is already in use, stop the existing process or 
 
 ## Related Docs
 
-- [CHANGELOG.md](c:\Users\Kingc\Documents\GitHub\Jungle Game\CHANGELOG.md)
-- [docs/game-scaling-reference.txt](c:\Users\Kingc\Documents\GitHub\Jungle Game\docs\game-scaling-reference.txt)
-- [docs/suggested-scaling.txt](c:\Users\Kingc\Documents\GitHub\Jungle Game\docs\suggested-scaling.txt)
+- [CHANGELOG.md]
+- [docs/game-scaling-reference.txt]
+- [docs/suggested-scaling.txt]
