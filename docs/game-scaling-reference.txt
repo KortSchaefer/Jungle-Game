@@ -16,6 +16,7 @@ Source: renderer code (schemaVersion 10)
   - Fertilizer Lab: base 1200, growth 1.35
   - Research Lab: base 1500, growth 1.35
   - Finance Office: base 2100, growth 1.35
+    - max level: 21
 
 - Orchard cost: orchardBaseCost * (orchardCostGrowth ^ orchardsOwned)
   - orchardBaseCost = 4000
@@ -86,6 +87,7 @@ Derived harvest modifiers from gameplay:
 
 - Finance Office:
   upgrade cash discount multiplier = max(0.35, 1 - level * 0.03)
+  capped at level 21 to avoid dead levels past the discount floor
 
 - Research Points gain:
   RP/sec = researchLabLevel * 0.06 * achievementResearchMultiplier * challengeResearchMultiplier * ascensionRewardResearchMultiplier

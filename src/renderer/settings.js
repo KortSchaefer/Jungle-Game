@@ -1,5 +1,5 @@
 const SETTINGS_KEY = "jungleGameUiSettings";
-const UI_SETTINGS_SCHEMA_VERSION = 4;
+const UI_SETTINGS_SCHEMA_VERSION = 5;
 const DISPLAY_NAME_MIN_LENGTH = 3;
 const DISPLAY_NAME_MAX_LENGTH = 16;
 const DISPLAY_NAME_CHANGE_COOLDOWN_MS = 60 * 1000;
@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   createdAt: 0,
   profileCompleted: false,
   lastDisplayNameChangeAt: 0,
-  upgradesViewOpen: false,
+  activeTopView: "main",
   buyerTierExpanded: {
     Local: true,
     Corporate: false,
@@ -100,7 +100,11 @@ function sanitizeSettings(raw, options = {}) {
   next.displayName = sanitizeDisplayName(next.displayName);
   next.avatarEmoji = sanitizeAvatarEmoji(next.avatarEmoji);
   next.lastDisplayNameChangeAt = Number(next.lastDisplayNameChangeAt) > 0 ? Number(next.lastDisplayNameChangeAt) : 0;
-  next.upgradesViewOpen = Boolean(next.upgradesViewOpen);
+  const legacyUpgradesViewOpen = Boolean(next.upgradesViewOpen);
+  next.activeTopView = ["main", "upgrades", "casino"].includes(next.activeTopView)
+    ? next.activeTopView
+    : (legacyUpgradesViewOpen ? "upgrades" : "main");
+  delete next.upgradesViewOpen;
   const expandedSource = next.buyerTierExpanded && typeof next.buyerTierExpanded === "object" ? next.buyerTierExpanded : {};
   next.buyerTierExpanded = BUYER_TIER_ORDER.reduce((acc, tier) => {
     const fallback = DEFAULT_SETTINGS.buyerTierExpanded[tier];

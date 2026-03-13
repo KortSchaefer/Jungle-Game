@@ -20,10 +20,25 @@ import {
   sanitizeChallengeLastResult,
   sanitizeChallengeRewardsUnlocked,
 } from "./ascensionChallenges.js";
+import {
+  BLACKJACK_PHASES,
+  canSplitBlackjackHand,
+  createShuffledBlackjackDeck,
+  dealerShouldHit,
+  getBlackjackHandValue,
+  getDefaultBlackjackState,
+  getDefaultBlackjackStats,
+  getDefaultCasinoState,
+  getDefaultCasinoStats,
+  isNaturalBlackjack,
+  isTenValueCard,
+  sanitizeBlackjackHand,
+  sanitizeCasinoState,
+} from "./blackjack.js";
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 10;
+export const GAME_STATE_SCHEMA_VERSION = 11;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
@@ -362,6 +377,16 @@ export const pipUpgrades = Object.freeze([
       workerPickMultiplierPerRank: 1.06,
     },
   },
+  {
+    id: "pip_qol_casino",
+    name: "Card Shark License",
+    description: "Unlock the Monkey Casino and its blackjack table.",
+    category: "QoL",
+    maxRank: 1,
+    baseCostPip: 20,
+    costGrowth: 2.0,
+    effect: { casinoUnlocked: true },
+  },
 ]);
 
 const timedEvents = Object.freeze({
@@ -428,6 +453,7 @@ const BUILDING_TYPES = Object.freeze({
     stateKey: "financeOfficeLevel",
     baseCost: 2100,
     growth: BUILDING_COST_GROWTH,
+    maxLevel: 21,
   },
 });
 
@@ -640,6 +666,7 @@ const DEFAULT_STATE = Object.freeze({
   challengeHistory: getDefaultChallengeHistory(),
   challengeRewardsUnlocked: getDefaultChallengeRewardsUnlocked(),
   challengeLastResult: getDefaultChallengeLastResult(),
+  casino: getDefaultCasinoState(),
   lastSaveTimestamp: Date.now(),
 });
 
@@ -850,6 +877,7 @@ function prepareStateForChallengeRun() {
     prestigeCount: gameState.prestigeCount,
     challengeHistory: cloneSerializable(gameState.challengeHistory || {}),
     challengeRewardsUnlocked: cloneSerializable(gameState.challengeRewardsUnlocked || []),
+    casino: cloneSerializable(gameState.casino || getDefaultCasinoState()),
   };
 
   Object.assign(gameState, DEFAULT_STATE, preservedMeta, {
@@ -1318,6 +1346,9 @@ function migrateLoadedState(rawState) {
         : legacyResearchHutLevel
     );
   }
+  if (sourceSchemaVersion < 11) {
+    migrated.casino = getDefaultCasinoState();
+  }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
   return migrated;
@@ -1401,7 +1432,9 @@ function getBuildingLevel(buildingType) {
     return 0;
   }
 
-  return clampNonNegative(Math.floor(Number(gameState[config.stateKey]) || 0));
+  const rawLevel = clampNonNegative(Math.floor(Number(gameState[config.stateKey]) || 0));
+  const maxLevel = Number.isFinite(Number(config.maxLevel)) ? Math.max(0, Math.floor(Number(config.maxLevel))) : null;
+  return maxLevel == null ? rawLevel : Math.min(rawLevel, maxLevel);
 }
 
 function getConverterLevel(converterId) {
@@ -1568,6 +1601,7 @@ function recomputeDerivedStats() {
   const challengeContext = resolveChallengeContext();
   const challengeModifiers = challengeContext.resolved;
   const rewardModifiers = resolveAscensionRewardContext().resolved;
+  gameState.casino.unlocked = Boolean(pipModifiers.casinoUnlocked);
 
   gameState.productionMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * pipModifiers.productionMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.productionMultiplier * challengeModifiers.productionMultiplier * rewardModifiers.productionMultiplier));
   gameState.clickMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * pipModifiers.clickMultiplier * researchCompletionMultipliers.clickMultiplier * challengeModifiers.clickMultiplier * rewardModifiers.clickMultiplier));
@@ -1878,6 +1912,7 @@ export function getPipModifiers() {
     autoSellPriceMultiplier: 1,
     researchDiscountMultiplier: 1,
     orchardPickMultiplier: 1,
+    casinoUnlocked: false,
   };
 
   pipUpgrades.forEach((upgrade) => {
@@ -1931,6 +1966,9 @@ export function getPipModifiers() {
     if (effect.orchardPickMultiplierPerRank) {
       modifiers.orchardPickMultiplier *= effect.orchardPickMultiplierPerRank ** rank;
     }
+    if (effect.casinoUnlocked) {
+      modifiers.casinoUnlocked = true;
+    }
   });
 
   return {
@@ -1949,6 +1987,7 @@ export function getPipModifiers() {
     autoSellPriceMultiplier: stabilizeNumber(modifiers.autoSellPriceMultiplier),
     researchDiscountMultiplier: Math.max(0.5, stabilizeNumber(modifiers.researchDiscountMultiplier)),
     orchardPickMultiplier: stabilizeNumber(modifiers.orchardPickMultiplier),
+    casinoUnlocked: Boolean(modifiers.casinoUnlocked),
   };
 }
 
@@ -2364,6 +2403,506 @@ function addCash(amount) {
 
 function removeCash(amount) {
   gameState.cash = clampNonNegative(addStable(gameState.cash, -amount));
+}
+
+function getCasinoBlackjackState() {
+  if (!gameState.casino || typeof gameState.casino !== "object") {
+    gameState.casino = getDefaultCasinoState();
+  }
+  if (!gameState.casino.blackjack || typeof gameState.casino.blackjack !== "object") {
+    gameState.casino.blackjack = getDefaultBlackjackState();
+  }
+  return gameState.casino.blackjack;
+}
+
+function createBlackjackHand(cards, wager, options = {}) {
+  return sanitizeBlackjackHand({
+    id: options.id || `hand-${Math.random().toString(36).slice(2, 8)}`,
+    cards,
+    wager,
+    doubled: false,
+    splitFromAces: Boolean(options.splitFromAces),
+    surrendered: false,
+    stood: Boolean(options.stood),
+    busted: false,
+    resolved: false,
+    result: null,
+    payout: 0,
+    actionCount: 0,
+    insuranceResolved: false,
+    isSplitHand: Boolean(options.isSplitHand),
+  });
+}
+
+function drawBlackjackCard(blackjackState, faceUp = true) {
+  if (!Array.isArray(blackjackState.deck) || blackjackState.deck.length <= 0) {
+    blackjackState.deck = createShuffledBlackjackDeck();
+  }
+  const card = blackjackState.deck.shift();
+  return { ...card, faceUp };
+}
+
+function getCurrentBlackjackHand(blackjackState = getCasinoBlackjackState()) {
+  return blackjackState.playerHands[blackjackState.activeHandIndex] || null;
+}
+
+function getNextUnresolvedBlackjackHandIndex(blackjackState) {
+  return blackjackState.playerHands.findIndex((hand) => !hand.resolved && !hand.stood && !hand.busted && !hand.surrendered);
+}
+
+function advanceBlackjackTurn(blackjackState) {
+  const nextIndex = getNextUnresolvedBlackjackHandIndex(blackjackState);
+  if (nextIndex >= 0) {
+    blackjackState.activeHandIndex = nextIndex;
+    blackjackState.tablePhase = BLACKJACK_PHASES.player_turn;
+    blackjackState.canSurrender = Boolean(blackjackState.playerHands[nextIndex]?.actionCount === 0);
+    return;
+  }
+  blackjackState.tablePhase = BLACKJACK_PHASES.dealer_turn;
+  blackjackState.canSurrender = false;
+}
+
+function updateLargestSingleBet(stats, amount) {
+  stats.largestSingleBet = Math.max(stats.largestSingleBet, Math.max(0, Number(amount) || 0));
+}
+
+function addCasinoWager(amount) {
+  const safeAmount = Math.max(0, Number(amount) || 0);
+  if (safeAmount <= 0) {
+    return;
+  }
+  gameState.casino.blackjackStats.totalCashWagered = addStable(gameState.casino.blackjackStats.totalCashWagered, safeAmount);
+  gameState.casino.casinoStats.totalCasinoCashWagered = addStable(gameState.casino.casinoStats.totalCasinoCashWagered, safeAmount);
+  updateLargestSingleBet(gameState.casino.blackjackStats, safeAmount);
+}
+
+function finalizeBlackjackHandStats(hand, netChange) {
+  const stats = gameState.casino.blackjackStats;
+  stats.handsPlayed += 1;
+  if (hand.result === "win" || hand.result === "blackjack") {
+    stats.handsWon += 1;
+    stats.currentWinStreak += 1;
+    stats.bestWinStreak = Math.max(stats.bestWinStreak, stats.currentWinStreak);
+  } else if (hand.result === "push") {
+    stats.handsPushed += 1;
+  } else if (hand.result === "surrender") {
+    stats.handsSurrendered += 1;
+    stats.currentWinStreak = 0;
+  } else {
+    stats.handsLost += 1;
+    stats.currentWinStreak = 0;
+  }
+  if (hand.result === "blackjack") {
+    stats.naturalBlackjacks += 1;
+  }
+  if (hand.busted) {
+    stats.playerBusts += 1;
+  }
+  if (netChange > 0) {
+    stats.totalCashWon = addStable(stats.totalCashWon, netChange);
+    gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, netChange);
+    stats.largestSingleWin = Math.max(stats.largestSingleWin, netChange);
+  } else if (netChange < 0) {
+    stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(netChange));
+  }
+}
+
+function settleBlackjackHands(blackjackState) {
+  const dealerValue = getBlackjackHandValue(blackjackState.dealerCards);
+  if (dealerValue.isBust) {
+    gameState.casino.blackjackStats.dealerBusts += 1;
+  }
+
+  const netResults = [];
+  blackjackState.playerHands.forEach((hand) => {
+    if (hand.resolved && (hand.result === "surrender" || hand.result === "bust")) {
+      finalizeBlackjackHandStats(hand, hand.result === "surrender" ? -(hand.wager / 2) : -hand.wager);
+      return;
+    }
+
+    const handValue = getBlackjackHandValue(hand.cards);
+    const natural = isNaturalBlackjack(hand.cards) && !hand.isSplitHand;
+    let payout = 0;
+    let result = "loss";
+
+    if (handValue.isBust) {
+      result = "loss";
+    } else if (dealerValue.isBust) {
+      result = natural ? "blackjack" : "win";
+      payout = natural ? hand.wager * 2.5 : hand.wager * 2;
+    } else {
+      const dealerNatural = isNaturalBlackjack(blackjackState.dealerCards);
+      if (natural && !dealerNatural) {
+        result = "blackjack";
+        payout = hand.wager * 2.5;
+      } else if (dealerNatural && natural) {
+        result = "push";
+        payout = hand.wager;
+      } else if (handValue.total > dealerValue.total) {
+        result = "win";
+        payout = hand.wager * 2;
+      } else if (handValue.total === dealerValue.total) {
+        result = "push";
+        payout = hand.wager;
+      }
+    }
+
+    if (payout > 0) {
+      addCash(payout);
+    }
+    hand.payout = stabilizeNumber(payout);
+    hand.result = result;
+    hand.resolved = true;
+    const netChange = payout - hand.wager;
+    netResults.push(netChange);
+    finalizeBlackjackHandStats(hand, netChange);
+  });
+
+  blackjackState.handResultSummary = blackjackState.playerHands.map((hand, index) => `Hand ${index + 1}: ${hand.result || "loss"}`).join(" | ");
+  blackjackState.tablePhase = BLACKJACK_PHASES.settled;
+  blackjackState.activeHandIndex = 0;
+  blackjackState.canSurrender = false;
+}
+
+function resolveDealerBlackjackPeek(blackjackState) {
+  blackjackState.dealerHoleCardRevealed = true;
+  blackjackState.dealerCards = blackjackState.dealerCards.map((card, index) => (index === 1 ? { ...card, faceUp: true } : card));
+  const dealerNatural = isNaturalBlackjack(blackjackState.dealerCards);
+  const insuranceBet = Math.max(0, Number(blackjackState.insuranceBet) || 0);
+  if (!dealerNatural) {
+    if (insuranceBet > 0) {
+      gameState.casino.blackjackStats.totalCashLost = addStable(gameState.casino.blackjackStats.totalCashLost, insuranceBet);
+      blackjackState.insuranceBet = 0;
+    }
+    const playerNatural = blackjackState.playerHands.some((hand) => isNaturalBlackjack(hand.cards) && !hand.isSplitHand);
+    if (playerNatural) {
+      settleBlackjackHands(blackjackState);
+    } else {
+      blackjackState.tablePhase = BLACKJACK_PHASES.player_turn;
+      blackjackState.canSurrender = true;
+    }
+    return false;
+  }
+
+  if (insuranceBet > 0) {
+    addCash(insuranceBet * 3);
+    gameState.casino.blackjackStats.insuranceWins += 1;
+    blackjackState.insuranceBet = 0;
+  }
+  settleBlackjackHands(blackjackState);
+  return true;
+}
+
+function resetBlackjackRound(blackjackState, reasonText = "") {
+  blackjackState.tablePhase = BLACKJACK_PHASES.idle;
+  blackjackState.deck = [];
+  blackjackState.dealerCards = [];
+  blackjackState.dealerHoleCardRevealed = false;
+  blackjackState.playerHands = [];
+  blackjackState.activeHandIndex = 0;
+  blackjackState.mainBet = 0;
+  blackjackState.insuranceBet = 0;
+  blackjackState.offeredInsurance = false;
+  blackjackState.canSurrender = false;
+  blackjackState.handResultSummary = reasonText;
+  blackjackState.lastPlayedAt = Date.now();
+}
+
+function syncFavoriteCasinoGame() {
+  gameState.casino.casinoStats.favoriteGameId = "blackjack";
+}
+
+function resolveBlackjackDealerTurn(blackjackState) {
+  blackjackState.dealerHoleCardRevealed = true;
+  blackjackState.dealerCards = blackjackState.dealerCards.map((card, index) => (index === 1 ? { ...card, faceUp: true } : card));
+  while (dealerShouldHit(blackjackState.dealerCards)) {
+    blackjackState.dealerCards.push(drawBlackjackCard(blackjackState, true));
+  }
+  settleBlackjackHands(blackjackState);
+}
+
+function getOutstandingBlackjackStake(blackjackState) {
+  const unresolvedHands = blackjackState.playerHands.filter((hand) => !hand.resolved).reduce((sum, hand) => sum + Math.max(0, Number(hand.wager) || 0), 0);
+  return unresolvedHands + Math.max(0, Number(blackjackState.insuranceBet) || 0);
+}
+
+function canSurrenderCurrentBlackjackHand(blackjackState) {
+  const hand = getCurrentBlackjackHand(blackjackState);
+  return Boolean(
+    blackjackState.tablePhase === BLACKJACK_PHASES.player_turn &&
+    hand &&
+    !hand.resolved &&
+    !hand.isSplitHand &&
+    hand.cards.length === 2 &&
+    hand.actionCount === 0 &&
+    blackjackState.canSurrender
+  );
+}
+
+export function getCasinoStatus() {
+  const casino = gameState.casino || getDefaultCasinoState();
+  return {
+    unlocked: Boolean(casino.unlocked),
+    activeGameId: String(casino.activeGameId || "blackjack"),
+    casinoStats: { ...casino.casinoStats },
+    blackjackStats: { ...casino.blackjackStats },
+  };
+}
+
+export function getBlackjackStatus() {
+  const blackjackState = getCasinoBlackjackState();
+  const currentHand = getCurrentBlackjackHand(blackjackState);
+  const currentHandValue = currentHand ? getBlackjackHandValue(currentHand.cards) : null;
+  return {
+    unlocked: Boolean(gameState.casino.unlocked),
+    activeGameId: gameState.casino.activeGameId,
+    tablePhase: blackjackState.tablePhase,
+    dealerCards: blackjackState.dealerCards.map((card, index) =>
+      blackjackState.dealerHoleCardRevealed || index !== 1 ? { ...card, faceUp: true } : { ...card, faceUp: false }
+    ),
+    dealerValue: blackjackState.dealerHoleCardRevealed ? getBlackjackHandValue(blackjackState.dealerCards) : null,
+    playerHands: blackjackState.playerHands.map((hand, index) => ({
+      ...hand,
+      displayValue: getBlackjackHandValue(hand.cards),
+      isActive: index === blackjackState.activeHandIndex && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn,
+      canSplit: !hand.isSplitHand && canSplitBlackjackHand(hand) && hand.cards.length === 2,
+      canDouble: hand.cards.length === 2 && !hand.resolved && !hand.splitFromAces,
+    })),
+    activeHandIndex: blackjackState.activeHandIndex,
+    mainBet: blackjackState.mainBet,
+    insuranceBet: blackjackState.insuranceBet,
+    offeredInsurance: blackjackState.offeredInsurance,
+    handResultSummary: blackjackState.handResultSummary,
+    lastPlayedAt: blackjackState.lastPlayedAt,
+    canDeal: gameState.casino.unlocked && (blackjackState.tablePhase === BLACKJACK_PHASES.idle || blackjackState.tablePhase === BLACKJACK_PHASES.settled),
+    canHit: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && !currentHand.resolved && !currentHand.stood && !currentHand.splitFromAces && currentHandValue?.total < 21),
+    canStand: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && !currentHand.resolved),
+    canDouble: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && currentHand.cards.length === 2 && !currentHand.resolved && !currentHand.splitFromAces && gameState.cash >= currentHand.wager),
+    canSplit: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && !currentHand.isSplitHand && canSplitBlackjackHand(currentHand) && gameState.cash >= currentHand.wager),
+    canTakeInsurance: blackjackState.tablePhase === BLACKJACK_PHASES.insurance_offer && gameState.cash >= Math.floor(Math.max(0, blackjackState.mainBet) / 2),
+    canDeclineInsurance: blackjackState.tablePhase === BLACKJACK_PHASES.insurance_offer,
+    canSurrender: canSurrenderCurrentBlackjackHand(blackjackState),
+    outstandingStake: getOutstandingBlackjackStake(blackjackState),
+    blackjackStats: { ...gameState.casino.blackjackStats },
+    casinoStats: { ...gameState.casino.casinoStats },
+  };
+}
+
+export function cancelCasinoRound(reason = "round_cancelled") {
+  const blackjackState = getCasinoBlackjackState();
+  const outstandingStake = getOutstandingBlackjackStake(blackjackState);
+  if (outstandingStake > 0) {
+    addCash(outstandingStake);
+  }
+  resetBlackjackRound(blackjackState, `Round cancelled: ${String(reason).replace(/_/g, " ")}`);
+  notifyListeners();
+  return true;
+}
+
+export function startBlackjackHand(betCash) {
+  if (!gameState.casino.unlocked) {
+    return { success: false, reason: "casino_locked" };
+  }
+  const safeBet = Math.max(0, Math.floor(Number(betCash) || 0));
+  if (safeBet <= 0 || safeBet > gameState.cash) {
+    return { success: false, reason: "invalid_bet" };
+  }
+  const blackjackState = getCasinoBlackjackState();
+  if (![BLACKJACK_PHASES.idle, BLACKJACK_PHASES.settled].includes(blackjackState.tablePhase)) {
+    return { success: false, reason: "round_already_active" };
+  }
+
+  removeCash(safeBet);
+  addCasinoWager(safeBet);
+  syncFavoriteCasinoGame();
+  gameState.casino.casinoStats.totalGamesPlayed += 1;
+  blackjackState.deck = createShuffledBlackjackDeck();
+  blackjackState.dealerCards = [drawBlackjackCard(blackjackState, true), drawBlackjackCard(blackjackState, false)];
+  blackjackState.playerHands = [
+    createBlackjackHand([drawBlackjackCard(blackjackState, true), drawBlackjackCard(blackjackState, true)], safeBet),
+  ];
+  blackjackState.dealerHoleCardRevealed = false;
+  blackjackState.activeHandIndex = 0;
+  blackjackState.mainBet = safeBet;
+  blackjackState.insuranceBet = 0;
+  blackjackState.offeredInsurance = false;
+  blackjackState.canSurrender = true;
+  blackjackState.handResultSummary = "";
+  blackjackState.lastPlayedAt = Date.now();
+  blackjackState.tablePhase = BLACKJACK_PHASES.player_turn;
+
+  const dealerUpcard = blackjackState.dealerCards[0];
+  const playerNatural = isNaturalBlackjack(blackjackState.playerHands[0].cards);
+  if (dealerUpcard?.rank === "A") {
+    blackjackState.offeredInsurance = true;
+    blackjackState.tablePhase = BLACKJACK_PHASES.insurance_offer;
+  } else if (isTenValueCard(dealerUpcard)) {
+    resolveDealerBlackjackPeek(blackjackState);
+  } else if (playerNatural) {
+    blackjackState.dealerHoleCardRevealed = true;
+    blackjackState.dealerCards = blackjackState.dealerCards.map((card) => ({ ...card, faceUp: true }));
+    settleBlackjackHands(blackjackState);
+  }
+
+  notifyListeners();
+  return { success: true };
+}
+
+export function declineInsuranceBlackjack() {
+  const blackjackState = getCasinoBlackjackState();
+  if (blackjackState.tablePhase !== BLACKJACK_PHASES.insurance_offer) {
+    return false;
+  }
+  blackjackState.offeredInsurance = false;
+  resolveDealerBlackjackPeek(blackjackState);
+  notifyListeners();
+  return true;
+}
+
+export function takeInsuranceBlackjack() {
+  const blackjackState = getCasinoBlackjackState();
+  const insuranceStake = Math.floor(Math.max(0, Number(blackjackState.mainBet) || 0) / 2);
+  if (blackjackState.tablePhase !== BLACKJACK_PHASES.insurance_offer || insuranceStake <= 0 || gameState.cash < insuranceStake) {
+    return false;
+  }
+  removeCash(insuranceStake);
+  addCasinoWager(insuranceStake);
+  blackjackState.insuranceBet = insuranceStake;
+  blackjackState.offeredInsurance = false;
+  gameState.casino.blackjackStats.insuranceBetsPlaced += 1;
+  resolveDealerBlackjackPeek(blackjackState);
+  notifyListeners();
+  return true;
+}
+
+export function hitBlackjack() {
+  const blackjackState = getCasinoBlackjackState();
+  const hand = getCurrentBlackjackHand(blackjackState);
+  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.resolved || hand.splitFromAces) {
+    return false;
+  }
+  hand.cards.push(drawBlackjackCard(blackjackState, true));
+  hand.actionCount += 1;
+  blackjackState.canSurrender = false;
+  const value = getBlackjackHandValue(hand.cards);
+  if (value.isBust) {
+    hand.busted = true;
+    hand.resolved = true;
+    hand.result = "bust";
+    advanceBlackjackTurn(blackjackState);
+  } else if (value.total >= 21) {
+    hand.stood = true;
+    advanceBlackjackTurn(blackjackState);
+  }
+  if (blackjackState.tablePhase === BLACKJACK_PHASES.dealer_turn) {
+    resolveBlackjackDealerTurn(blackjackState);
+  }
+  notifyListeners();
+  return true;
+}
+
+export function standBlackjack() {
+  const blackjackState = getCasinoBlackjackState();
+  const hand = getCurrentBlackjackHand(blackjackState);
+  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.resolved) {
+    return false;
+  }
+  hand.stood = true;
+  advanceBlackjackTurn(blackjackState);
+  if (blackjackState.tablePhase === BLACKJACK_PHASES.dealer_turn) {
+    resolveBlackjackDealerTurn(blackjackState);
+  }
+  notifyListeners();
+  return true;
+}
+
+export function doubleDownBlackjack() {
+  const blackjackState = getCasinoBlackjackState();
+  const hand = getCurrentBlackjackHand(blackjackState);
+  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.cards.length !== 2 || hand.resolved || hand.splitFromAces || gameState.cash < hand.wager) {
+    return false;
+  }
+  removeCash(hand.wager);
+  addCasinoWager(hand.wager);
+  hand.wager = stabilizeNumber(hand.wager * 2);
+  hand.doubled = true;
+  hand.actionCount += 1;
+  gameState.casino.blackjackStats.doubleDownHands += 1;
+  hand.cards.push(drawBlackjackCard(blackjackState, true));
+  const value = getBlackjackHandValue(hand.cards);
+  if (value.isBust) {
+    hand.busted = true;
+    hand.resolved = true;
+    hand.result = "bust";
+  } else {
+    hand.stood = true;
+  }
+  blackjackState.canSurrender = false;
+  advanceBlackjackTurn(blackjackState);
+  if (blackjackState.tablePhase === BLACKJACK_PHASES.dealer_turn) {
+    resolveBlackjackDealerTurn(blackjackState);
+  }
+  notifyListeners();
+  return true;
+}
+
+export function splitBlackjack() {
+  const blackjackState = getCasinoBlackjackState();
+  const hand = getCurrentBlackjackHand(blackjackState);
+  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.isSplitHand || !canSplitBlackjackHand(hand) || gameState.cash < hand.wager) {
+    return false;
+  }
+
+  const splitIndex = blackjackState.activeHandIndex;
+  removeCash(hand.wager);
+  addCasinoWager(hand.wager);
+  gameState.casino.blackjackStats.splitHandsCreated += 1;
+  const isAces = hand.cards[0]?.rank === "A";
+  const leftHand = createBlackjackHand([hand.cards[0], drawBlackjackCard(blackjackState, true)], hand.wager, {
+    id: hand.id,
+    splitFromAces: isAces,
+    stood: isAces,
+    isSplitHand: true,
+  });
+  const rightHand = createBlackjackHand([hand.cards[1], drawBlackjackCard(blackjackState, true)], hand.wager, {
+    splitFromAces: isAces,
+    stood: isAces,
+    isSplitHand: true,
+  });
+  if (isAces) {
+    leftHand.actionCount = 1;
+    rightHand.actionCount = 1;
+  }
+  blackjackState.playerHands.splice(splitIndex, 1, leftHand, rightHand);
+  blackjackState.canSurrender = false;
+  advanceBlackjackTurn(blackjackState);
+  if (!isAces) {
+    blackjackState.activeHandIndex = splitIndex;
+    blackjackState.tablePhase = BLACKJACK_PHASES.player_turn;
+  } else if (blackjackState.tablePhase === BLACKJACK_PHASES.dealer_turn) {
+    resolveBlackjackDealerTurn(blackjackState);
+  }
+  notifyListeners();
+  return true;
+}
+
+export function surrenderBlackjack() {
+  const blackjackState = getCasinoBlackjackState();
+  const hand = getCurrentBlackjackHand(blackjackState);
+  if (!hand || !canSurrenderCurrentBlackjackHand(blackjackState)) {
+    return false;
+  }
+  hand.surrendered = true;
+  hand.resolved = true;
+  hand.result = "surrender";
+  hand.payout = stabilizeNumber(hand.wager / 2);
+  addCash(hand.payout);
+  advanceBlackjackTurn(blackjackState);
+  if (blackjackState.tablePhase === BLACKJACK_PHASES.dealer_turn) {
+    resolveBlackjackDealerTurn(blackjackState);
+  }
+  notifyListeners();
+  return true;
 }
 
 function performAutoSell() {
@@ -2884,6 +3423,7 @@ export function startChallengeRun(challengeId) {
     return { success: false, reason: "challenge_locked" };
   }
 
+  cancelCasinoRound("challenge_start");
   const preRunSnapshot = createChallengePreRunSnapshot();
   prepareStateForChallengeRun();
 
@@ -3028,13 +3568,32 @@ export function getBuildingCost(buildingType) {
   }
 
   const level = getBuildingLevel(buildingType);
+  const maxLevel = Number.isFinite(Number(config.maxLevel)) ? Math.max(0, Math.floor(Number(config.maxLevel))) : null;
+  if (maxLevel != null && level >= maxLevel) {
+    return 0;
+  }
   const cost = config.baseCost * config.growth ** level;
   return stabilizeNumber(cost);
+}
+
+export function getBuildingMaxLevel(buildingType) {
+  const config = BUILDING_TYPES[buildingType];
+  if (!config) {
+    return null;
+  }
+  const maxLevel = Number(config.maxLevel);
+  return Number.isFinite(maxLevel) ? Math.max(0, Math.floor(maxLevel)) : null;
 }
 
 export function buyBuilding(buildingType) {
   const config = BUILDING_TYPES[buildingType];
   if (!config) {
+    return false;
+  }
+
+  const level = getBuildingLevel(buildingType);
+  const maxLevel = getBuildingMaxLevel(buildingType);
+  if (maxLevel != null && level >= maxLevel) {
     return false;
   }
 
@@ -3044,7 +3603,7 @@ export function buyBuilding(buildingType) {
   }
 
   removeCash(cost);
-  gameState[config.stateKey] = getBuildingLevel(buildingType) + 1;
+  gameState[config.stateKey] = level + 1;
   recomputeDerivedStats();
   notifyListeners();
   return true;
@@ -3236,6 +3795,7 @@ export function applyLoadedState(loadedState = {}) {
   gameState.challengeRewardsUnlocked = sanitizeChallengeRewardsUnlocked(gameState.challengeRewardsUnlocked);
   gameState.activeChallengeRun = sanitizeActiveChallengeRun(gameState.activeChallengeRun);
   gameState.challengeLastResult = sanitizeChallengeLastResult(gameState.challengeLastResult);
+  gameState.casino = sanitizeCasinoState(gameState.casino);
 
   gameState.evolutionProductionMultiplier = Math.max(1, Number(gameState.evolutionProductionMultiplier) || 1);
   gameState.packingShedLevel = clampNonNegative(Math.floor(Number(gameState.packingShedLevel) || 0));
@@ -3280,6 +3840,7 @@ export function applyLoadedState(loadedState = {}) {
   gameState.nextCeoEmailRollTimestamp = Number(gameState.nextCeoEmailRollTimestamp) || (Date.now() + getRandomCeoEmailDelayMs());
   gameState.rareItems = Array.isArray(gameState.rareItems) ? gameState.rareItems.filter((item) => typeof item === "string") : [];
   gameState.buyerCooldowns = sanitizeBuyerCooldowns(gameState.buyerCooldowns);
+  gameState.casino.unlocked = Boolean(getPipModifiers().casinoUnlocked);
 
   gameState.lastTickTime = Date.now();
   gameState.lastSaveTimestamp = Number(gameState.lastSaveTimestamp) || Date.now();
@@ -3782,6 +4343,7 @@ export function prestigeReset() {
     return false;
   }
 
+  cancelCasinoRound("prestige_reset");
   gameState.pip += pipGain;
   gameState.prestigeCount += 1;
 

@@ -17,7 +17,10 @@ import {
   getBuyerCooldownRemainingSeconds,
   getBuyerEffectivePricePerBanana,
   getBuyerReputationPercent,
+  getBlackjackStatus,
   getBuildingCost,
+  getBuildingMaxLevel,
+  getCasinoStatus,
   getCurrentTreeTier,
   getCurrentQuestStatus,
   getEffectiveTreeTierUnlockCost,
@@ -53,13 +56,22 @@ import {
   abandonChallengeRun,
   completeChallengeRun,
   clearChallengeLastResult,
+  declineInsuranceBlackjack,
+  doubleDownBlackjack,
   failChallengeRun,
+  hitBlackjack,
   purchaseTreeHarvestUpgrade,
   purchasePipUpgrade,
   purchaseUpgrade,
   resetAllProgress,
+  cancelCasinoRound,
   shakeTreeHarvest,
   sellBananas,
+  splitBlackjack,
+  standBlackjack,
+  startBlackjackHand,
+  surrenderBlackjack,
+  takeInsuranceBlackjack,
   shipToBuyer,
   clickTreeBanana,
   subscribe,
@@ -77,6 +89,7 @@ import { fetchLeaderboard, fetchLeaderboardMe, startLeaderboardSession, submitLe
 import { canChangeDisplayName, completeRegistration, loadUISettings, setUISettings, updateDisplayName } from "./settings.js";
 import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
 import { ascensionRewardById } from "./ascensionChallenges.js";
+import { renderBlackjackDealerMarkup, renderBlackjackPlayerHandsMarkup } from "./blackjackView.js";
 import { TreeHarvestView } from "./treeHarvestView.js";
 import { renderCeoPanel } from "./components/ceoPanel.js";
 import { renderHudBar } from "./components/hudBar.js";
@@ -413,11 +426,36 @@ export function mountUI(container) {
     confirmImportBtn: container.querySelector("#confirmImportBtn"),
     cancelImportBtn: container.querySelector("#cancelImportBtn"),
     mainView: container.querySelector("#mainView"),
+    showMainViewBtn: container.querySelector("#showMainViewBtn"),
     toggleUpgradesBtn: container.querySelector("#toggleUpgradesBtn"),
     upgradesView: container.querySelector("#upgradesView"),
+    toggleCasinoBtn: container.querySelector("#toggleCasinoBtn"),
+    casinoView: container.querySelector("#casinoView"),
     challengeHudStrip: container.querySelector("#challengeHudStrip"),
     challengeHudStatusText: container.querySelector("#challengeHudStatusText"),
     challengeHudTimerText: container.querySelector("#challengeHudTimerText"),
+    casinoLockedPanel: container.querySelector("#casinoLockedPanel"),
+    blackjackTableCard: container.querySelector("#blackjackTableCard"),
+    casinoIntroText: container.querySelector("#casinoIntroText"),
+    casinoBlackjackGameBtn: container.querySelector("#casinoBlackjackGameBtn"),
+    blackjackStatusText: container.querySelector("#blackjackStatusText"),
+    blackjackStakeText: container.querySelector("#blackjackStakeText"),
+    blackjackDealerValueText: container.querySelector("#blackjackDealerValueText"),
+    blackjackDealerHands: container.querySelector("#blackjackDealerHands"),
+    blackjackPlayerValueText: container.querySelector("#blackjackPlayerValueText"),
+    blackjackPlayerHands: container.querySelector("#blackjackPlayerHands"),
+    blackjackBetInput: container.querySelector("#blackjackBetInput"),
+    blackjackDealBtn: container.querySelector("#blackjackDealBtn"),
+    blackjackInsuranceText: container.querySelector("#blackjackInsuranceText"),
+    blackjackHitBtn: container.querySelector("#blackjackHitBtn"),
+    blackjackStandBtn: container.querySelector("#blackjackStandBtn"),
+    blackjackDoubleBtn: container.querySelector("#blackjackDoubleBtn"),
+    blackjackSplitBtn: container.querySelector("#blackjackSplitBtn"),
+    blackjackInsuranceBtn: container.querySelector("#blackjackInsuranceBtn"),
+    blackjackDeclineInsuranceBtn: container.querySelector("#blackjackDeclineInsuranceBtn"),
+    blackjackSurrenderBtn: container.querySelector("#blackjackSurrenderBtn"),
+    blackjackCancelBtn: container.querySelector("#blackjackCancelBtn"),
+    blackjackStatsList: container.querySelector("#blackjackStatsList"),
   };
 
   let numberFormatMode = settings.numberFormat;
@@ -473,25 +511,44 @@ export function mountUI(container) {
   }
   elements.saveSlotSelect.value = String(settings.activeSaveSlot || 1);
 
-  const setUpgradesViewOpen = (isOpen, persist = true) => {
+  const setTopView = (viewId, persist = true) => {
+    const casinoUnlocked = Boolean(getCasinoStatus().unlocked);
+    const safeView = viewId === "casino" && !casinoUnlocked ? "main" : (["main", "upgrades", "casino"].includes(viewId) ? viewId : "main");
     if (elements.mainView) {
-      elements.mainView.classList.toggle("is-hidden", isOpen);
-      elements.mainView.setAttribute("aria-hidden", String(isOpen));
+      const hidden = safeView !== "main";
+      elements.mainView.classList.toggle("is-hidden", hidden);
+      elements.mainView.setAttribute("aria-hidden", String(hidden));
     }
     if (elements.upgradesView) {
-      elements.upgradesView.classList.toggle("is-hidden", !isOpen);
-      elements.upgradesView.setAttribute("aria-hidden", String(!isOpen));
+      const hidden = safeView !== "upgrades";
+      elements.upgradesView.classList.toggle("is-hidden", hidden);
+      elements.upgradesView.setAttribute("aria-hidden", String(hidden));
+    }
+    if (elements.casinoView) {
+      const hidden = safeView !== "casino";
+      elements.casinoView.classList.toggle("is-hidden", hidden);
+      elements.casinoView.setAttribute("aria-hidden", String(hidden));
+    }
+    if (elements.showMainViewBtn) {
+      elements.showMainViewBtn.classList.toggle("is-active", safeView === "main");
+      elements.showMainViewBtn.setAttribute("aria-expanded", String(safeView === "main"));
     }
     if (elements.toggleUpgradesBtn) {
-      elements.toggleUpgradesBtn.textContent = isOpen ? "Back To Main" : "Upgrades";
-      elements.toggleUpgradesBtn.setAttribute("aria-expanded", String(isOpen));
+      elements.toggleUpgradesBtn.classList.toggle("is-active", safeView === "upgrades");
+      elements.toggleUpgradesBtn.setAttribute("aria-expanded", String(safeView === "upgrades"));
       elements.toggleUpgradesBtn.setAttribute("aria-controls", "upgradesView");
     }
+    if (elements.toggleCasinoBtn) {
+      elements.toggleCasinoBtn.classList.toggle("is-active", safeView === "casino");
+      elements.toggleCasinoBtn.setAttribute("aria-expanded", String(safeView === "casino"));
+      elements.toggleCasinoBtn.setAttribute("aria-controls", "casinoView");
+      elements.toggleCasinoBtn.classList.toggle("is-hidden", !casinoUnlocked);
+    }
     if (persist) {
-      const next = setUISettings({ upgradesViewOpen: isOpen });
-      settings.upgradesViewOpen = next.upgradesViewOpen;
+      const next = setUISettings({ activeTopView: safeView });
+      settings.activeTopView = next.activeTopView;
     } else {
-      settings.upgradesViewOpen = isOpen;
+      settings.activeTopView = safeView;
     }
   };
 
@@ -611,12 +668,23 @@ export function mountUI(container) {
     }
   };
 
-  setUpgradesViewOpen(Boolean(settings.upgradesViewOpen), false);
+  setTopView(settings.activeTopView || "main", false);
 
-  if (elements.toggleUpgradesBtn && elements.upgradesView) {
+  if (elements.showMainViewBtn) {
+    elements.showMainViewBtn.addEventListener("click", () => {
+      setTopView("main", true);
+    });
+  }
+
+  if (elements.toggleUpgradesBtn) {
     elements.toggleUpgradesBtn.addEventListener("click", () => {
-      const currentlyOpen = !elements.upgradesView.classList.contains("is-hidden");
-      setUpgradesViewOpen(!currentlyOpen, true);
+      setTopView("upgrades", true);
+    });
+  }
+
+  if (elements.toggleCasinoBtn) {
+    elements.toggleCasinoBtn.addEventListener("click", () => {
+      setTopView("casino", true);
     });
   }
 
@@ -1064,6 +1132,60 @@ export function mountUI(container) {
     });
   }
 
+  if (elements.blackjackDealBtn) {
+    elements.blackjackDealBtn.addEventListener("click", () => {
+      startBlackjackHand(elements.blackjackBetInput?.value);
+    });
+  }
+
+  if (elements.blackjackHitBtn) {
+    elements.blackjackHitBtn.addEventListener("click", () => {
+      hitBlackjack();
+    });
+  }
+
+  if (elements.blackjackStandBtn) {
+    elements.blackjackStandBtn.addEventListener("click", () => {
+      standBlackjack();
+    });
+  }
+
+  if (elements.blackjackDoubleBtn) {
+    elements.blackjackDoubleBtn.addEventListener("click", () => {
+      doubleDownBlackjack();
+    });
+  }
+
+  if (elements.blackjackSplitBtn) {
+    elements.blackjackSplitBtn.addEventListener("click", () => {
+      splitBlackjack();
+    });
+  }
+
+  if (elements.blackjackInsuranceBtn) {
+    elements.blackjackInsuranceBtn.addEventListener("click", () => {
+      takeInsuranceBlackjack();
+    });
+  }
+
+  if (elements.blackjackDeclineInsuranceBtn) {
+    elements.blackjackDeclineInsuranceBtn.addEventListener("click", () => {
+      declineInsuranceBlackjack();
+    });
+  }
+
+  if (elements.blackjackSurrenderBtn) {
+    elements.blackjackSurrenderBtn.addEventListener("click", () => {
+      surrenderBlackjack();
+    });
+  }
+
+  if (elements.blackjackCancelBtn) {
+    elements.blackjackCancelBtn.addEventListener("click", () => {
+      cancelCasinoRound("manual_cancel");
+    });
+  }
+
   const buyersList = container.querySelector("#buyersList");
   const buyerElements = new Map();
 
@@ -1360,7 +1482,16 @@ export function mountUI(container) {
     const fertilizerLabCost = getBuildingCost("fertilizer_lab");
     const researchLabCost = getBuildingCost("research_lab");
     const financeOfficeCost = getBuildingCost("finance_office");
+    const financeOfficeMaxLevel = getBuildingMaxLevel("finance_office");
     const questStatus = getCurrentQuestStatus();
+    const casinoStatus = getCasinoStatus();
+    const blackjackStatus = getBlackjackStatus();
+
+    if (settings.activeTopView === "casino" && !casinoStatus.unlocked) {
+      setTopView("main", true);
+    } else {
+      setTopView(settings.activeTopView || "main", false);
+    }
 
     setTextIfChanged(elements.bananasText, fmt(state.bananas));
     setTextIfChanged(elements.cashText, `$${fmt(state.cash)}`);
@@ -1368,6 +1499,89 @@ export function mountUI(container) {
     setTextIfChanged(elements.clickYieldText, fmt(state.clickYield));
     setTextIfChanged(elements.treesText, `Trees Owned: ${fmt(state.treesOwned)}`);
     setTextIfChanged(elements.treeRateText, `Harvest power: ${fmt(state.productionMultiplier)}x`);
+    setTextIfChanged(elements.buyerBonusText, `${fmt((state.exportPriceMultiplier - 1) * 100)}%`);
+    if (elements.toggleCasinoBtn) {
+      elements.toggleCasinoBtn.classList.toggle("is-hidden", !casinoStatus.unlocked);
+    }
+    if (elements.casinoLockedPanel) {
+      elements.casinoLockedPanel.classList.toggle("is-hidden", casinoStatus.unlocked);
+      elements.casinoLockedPanel.setAttribute("aria-hidden", String(casinoStatus.unlocked));
+    }
+    if (elements.blackjackTableCard) {
+      elements.blackjackTableCard.classList.toggle("is-hidden", !casinoStatus.unlocked);
+      elements.blackjackTableCard.setAttribute("aria-hidden", String(!casinoStatus.unlocked));
+    }
+    if (elements.casinoIntroText) {
+      setTextIfChanged(
+        elements.casinoIntroText,
+        casinoStatus.unlocked
+          ? "Monkey Casino is live. Blackjack uses cash only and tracks full table stats for future casino progression."
+          : "Unlock Card Shark License in the PIP Shop for 20 PIP to open the Monkey Casino."
+      );
+    }
+    if (elements.casinoBlackjackGameBtn) {
+      setTextIfChanged(elements.casinoBlackjackGameBtn, casinoStatus.unlocked ? "Blackjack Table Open" : "Blackjack Locked");
+      setDisabledIfChanged(elements.casinoBlackjackGameBtn, !casinoStatus.unlocked);
+    }
+    if (casinoStatus.unlocked) {
+      setTextIfChanged(elements.blackjackStatusText, blackjackStatus.handResultSummary || "Place a bet and deal a hand.");
+      setTextIfChanged(
+        elements.blackjackStakeText,
+        `Main Bet: $${fmt(blackjackStatus.mainBet)} | Insurance: $${fmt(blackjackStatus.insuranceBet)} | Active Stake: $${fmt(blackjackStatus.outstandingStake)}`
+      );
+      setTextIfChanged(
+        elements.blackjackDealerValueText,
+        blackjackStatus.dealerValue == null ? "Dealer Total: Hidden" : `Dealer Total: ${fmt(blackjackStatus.dealerValue.total)}`
+      );
+      const activePlayerHand = blackjackStatus.playerHands.find((hand) => hand.isActive) || blackjackStatus.playerHands[blackjackStatus.activeHandIndex] || null;
+      setTextIfChanged(
+        elements.blackjackPlayerValueText,
+        activePlayerHand ? `Active Hand Total: ${fmt(activePlayerHand.displayValue.total)}` : "Active Hand Total: -"
+      );
+      setTextIfChanged(
+        elements.blackjackInsuranceText,
+        blackjackStatus.canTakeInsurance || blackjackStatus.canDeclineInsurance
+          ? `Insurance offered: stake up to $${fmt(Math.floor(Math.max(0, Number(blackjackStatus.mainBet) || 0) / 2))}`
+          : "Insurance: Not currently offered"
+      );
+      setHtmlIfChanged(elements.blackjackDealerHands, renderBlackjackDealerMarkup(blackjackStatus.dealerCards));
+      setHtmlIfChanged(elements.blackjackPlayerHands, renderBlackjackPlayerHandsMarkup(blackjackStatus.playerHands));
+      if (elements.blackjackBetInput && document.activeElement !== elements.blackjackBetInput) {
+        const suggestedBet = Math.max(1, Math.min(Math.floor(Number(state.cash) || 0), Math.max(1, Math.floor(Number(blackjackStatus.mainBet) || 25))));
+        setValueIfChanged(elements.blackjackBetInput, suggestedBet);
+      }
+      setDisabledIfChanged(elements.blackjackDealBtn, !blackjackStatus.canDeal);
+      setDisabledIfChanged(elements.blackjackHitBtn, !blackjackStatus.canHit);
+      setDisabledIfChanged(elements.blackjackStandBtn, !blackjackStatus.canStand);
+      setDisabledIfChanged(elements.blackjackDoubleBtn, !blackjackStatus.canDouble);
+      setDisabledIfChanged(elements.blackjackSplitBtn, !blackjackStatus.canSplit);
+      setDisabledIfChanged(elements.blackjackInsuranceBtn, !blackjackStatus.canTakeInsurance);
+      setDisabledIfChanged(elements.blackjackDeclineInsuranceBtn, !blackjackStatus.canDeclineInsurance);
+      setDisabledIfChanged(elements.blackjackSurrenderBtn, !blackjackStatus.canSurrender);
+      setDisabledIfChanged(
+        elements.blackjackCancelBtn,
+        blackjackStatus.tablePhase === "idle" || blackjackStatus.tablePhase === "settled"
+      );
+      setHtmlIfChanged(
+        elements.blackjackStatsList,
+        [
+          ["Hands", blackjackStatus.blackjackStats.handsPlayed],
+          ["Wins", blackjackStatus.blackjackStats.handsWon],
+          ["Losses", blackjackStatus.blackjackStats.handsLost],
+          ["Pushes", blackjackStatus.blackjackStats.handsPushed],
+          ["Blackjacks", blackjackStatus.blackjackStats.naturalBlackjacks],
+          ["Splits", blackjackStatus.blackjackStats.splitHandsCreated],
+          ["Doubles", blackjackStatus.blackjackStats.doubleDownHands],
+          ["Wagered", `$${fmt(blackjackStatus.blackjackStats.totalCashWagered)}`],
+          ["Won", `$${fmt(blackjackStatus.blackjackStats.totalCashWon)}`],
+          ["Largest Win", `$${fmt(blackjackStatus.blackjackStats.largestSingleWin)}`],
+          ["Best Streak", fmt(blackjackStatus.blackjackStats.bestWinStreak)],
+          ["Casino Games", fmt(blackjackStatus.casinoStats.totalGamesPlayed)],
+        ]
+          .map(([label, value]) => `<div class="buyer-card"><p class="buyer-name">${label}</p><p>${value}</p></div>`)
+          .join("")
+      );
+    }
     if (inspectorPanelVisible) {
       const challengeRuleIds = Array.from(new Set((statBreakdown.challenge.rulesApplied || []).map((modifier) => modifier.sourceId))).join(", ");
       const challengeLabel = statBreakdown.challenge.active
@@ -1534,14 +1748,18 @@ export function mountUI(container) {
     setDisabledIfChanged(elements.buyFertilizerLabBtn, state.cash < fertilizerLabCost);
     setTextIfChanged(elements.buyResearchLabBtn, `Buy Research Lab ($${fmt(researchLabCost)})`);
     setDisabledIfChanged(elements.buyResearchLabBtn, state.cash < researchLabCost);
-    setTextIfChanged(elements.buyFinanceOfficeBtn, `Buy Finance Office ($${fmt(financeOfficeCost)})`);
-    setDisabledIfChanged(elements.buyFinanceOfficeBtn, state.cash < financeOfficeCost);
+    const financeOfficeMaxed = financeOfficeMaxLevel != null && state.financeOfficeLevel >= financeOfficeMaxLevel;
+    setTextIfChanged(
+      elements.buyFinanceOfficeBtn,
+      financeOfficeMaxed ? "Finance Office Maxed" : `Buy Finance Office ($${fmt(financeOfficeCost)})`
+    );
+    setDisabledIfChanged(elements.buyFinanceOfficeBtn, financeOfficeMaxed || state.cash < financeOfficeCost);
     setTextIfChanged(elements.packingShedText, `Packing Shed Lv ${fmt(state.packingShedLevel)} (+${fmt((state.packedExportBonusMultiplier - 1) * 100)}% export price)`);
     setTextIfChanged(elements.fertilizerLabText, `Fertilizer Lab Lv ${fmt(state.fertilizerLabLevel)} (tree output boost)`);
     setTextIfChanged(elements.researchLabText, `Research Lab Lv ${fmt(state.researchLabLevel)} (+${fmt(state.researchLabLevel * 0.06)} RP/sec base)`);
     setTextIfChanged(
       elements.financeOfficeText,
-      `Finance Office Lv ${fmt(state.financeOfficeLevel)} (upgrade costs x${fmt(Math.max(0.35, 1 - state.financeOfficeLevel * 0.03))})`
+      `Finance Office Lv ${fmt(state.financeOfficeLevel)}${financeOfficeMaxLevel != null ? ` / ${fmt(financeOfficeMaxLevel)}` : ""} (upgrade costs x${fmt(Math.max(0.35, 1 - state.financeOfficeLevel * 0.03))})`
     );
 
     const marketPrice = getMarketPricePerBanana();

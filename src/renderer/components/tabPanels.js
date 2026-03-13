@@ -2,7 +2,9 @@ export function renderTabPanels() {
   return `
     <section class="main-column">
       <nav class="top-nav" aria-label="Game sections">
+        <button id="showMainViewBtn" class="ghost-btn" type="button" aria-expanded="true" aria-controls="mainView">Main</button>
         <button id="toggleUpgradesBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="upgradesView">Upgrades</button>
+        <button id="toggleCasinoBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="casinoView">Casino</button>
       </nav>
       <section id="challengeHudStrip" class="ui-card challenge-hud-strip" aria-live="polite">
         <p id="challengeHudStatusText">Ascension Challenge: Inactive</p>
@@ -260,6 +262,82 @@ export function renderTabPanels() {
             <div class="compact-actions">
               <button id="closeChallengeResultBtn" type="button">Close</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="casinoView" class="tab-panel upgrades-panel is-hidden" aria-hidden="true">
+        <div class="ui-card casino-shell">
+          <div class="casino-header">
+            <div>
+              <h3>Monkey Casino</h3>
+              <p id="casinoIntroText">High-risk entertainment funded by banana capital.</p>
+            </div>
+            <div class="casino-game-nav">
+              <button id="casinoBlackjackGameBtn" type="button">Blackjack</button>
+              <button type="button" disabled>More Games Soon</button>
+            </div>
+          </div>
+
+          <div id="casinoLockedPanel" class="buyer-card">
+            <p class="buyer-name">Casino Locked</p>
+            <p>Buy the 20 PIP Card Shark License upgrade in the PIP Shop to unlock blackjack.</p>
+          </div>
+
+          <div id="blackjackTableCard" class="ui-card casino-card-table is-hidden">
+            <div class="casino-table-head">
+              <div>
+                <h3>Blackjack Table</h3>
+                <p id="blackjackStatusText">Place a bet to start a hand.</p>
+              </div>
+              <p id="blackjackStakeText">Stake: $0</p>
+            </div>
+
+            <div class="casino-table-layout">
+              <div class="blackjack-main">
+                <div class="blackjack-section">
+                  <p class="buyer-name">Dealer</p>
+                  <p id="blackjackDealerValueText">Total: -</p>
+                  <div id="blackjackDealerHands" class="blackjack-hand-zone"></div>
+                </div>
+
+                <div class="blackjack-section">
+                  <p class="buyer-name">Player</p>
+                  <p id="blackjackPlayerValueText">Active Hand: -</p>
+                  <div id="blackjackPlayerHands" class="blackjack-hand-zone"></div>
+                </div>
+              </div>
+
+              <aside class="blackjack-side">
+                <div class="buyer-card">
+                  <p class="buyer-name">Betting</p>
+                  <div class="blackjack-chip-controls">
+                    <input id="blackjackBetInput" type="number" min="1" step="1" value="100" />
+                    <button id="blackjackDealBtn" type="button">Deal</button>
+                  </div>
+                  <p id="blackjackInsuranceText">Insurance: $0</p>
+                </div>
+
+                <div class="buyer-card">
+                  <p class="buyer-name">Actions</p>
+                  <div class="compact-grid">
+                    <button id="blackjackHitBtn" type="button">Hit</button>
+                    <button id="blackjackStandBtn" type="button">Stand</button>
+                    <button id="blackjackDoubleBtn" type="button">Double</button>
+                    <button id="blackjackSplitBtn" type="button">Split</button>
+                    <button id="blackjackInsuranceBtn" type="button">Take Insurance</button>
+                    <button id="blackjackDeclineInsuranceBtn" type="button">Decline Insurance</button>
+                    <button id="blackjackSurrenderBtn" type="button">Surrender</button>
+                    <button id="blackjackCancelBtn" type="button">Cancel Round</button>
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <details class="blackjack-stats-details">
+              <summary>Player Stats</summary>
+              <div id="blackjackStatsList" class="compact-grid blackjack-stats-grid"></div>
+            </details>
           </div>
         </div>
       </section>

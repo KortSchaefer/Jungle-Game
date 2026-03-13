@@ -3,26 +3,41 @@ All notable changes to this project are documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [1.2.1] - 2026-03-11
+## [1.3.0] - 2026-03-13
 ### Added
-- Split the old Research Hut building into two separate upgrade tracks:
-  - `Research Lab`: increases RP/sec.
-  - `Finance Office`: reduces upgrade cash costs.
-- Added schema migration to map legacy `researchHutLevel` into both new tracks for fair save continuity.
-- Added stat-breakdown source visibility for:
-  - Research Lab base RP generation rate.
-  - Finance Office discount multiplier.
+- Added a new top-level `Casino` view beside `Main` and `Upgrades`.
+- Added the `Card Shark License` PIP upgrade to unlock the casino for `20 PIP`.
+- Added a dedicated blackjack system with persistent casino state and save migration support.
+- Added full blackjack table actions:
+  - Hit
+  - Stand
+  - Double Down
+  - Split
+  - Insurance
+  - Surrender
+  - Cancel Round
+- Added persistent blackjack and casino stat tracking, including wagers, wins, losses, pushes, blackjacks, doubles, splits, insurance usage, and streaks.
+- Added real card texture support using the imported PNG card set and monkey card back.
+- Added a collapsible `Player Stats` grid below the blackjack table.
 
 ### Changed
-- Building definitions updated:
-  - Removed `research_hut`.
-  - Added `research_lab` and `finance_office` with their own costs and levels.
-- Trees/Farms Buildings UI now shows separate rows/buttons for Research Lab and Finance Office.
-- Research discount pipeline now uses Finance Office only.
-- Research point generation now uses Research Lab only.
-- Prestige reset and state sanitization now reset/sanitize the two new building levels.
-- Game state schema version bumped to `10`.
+- Reworked renderer view switching to support `Main`, `Upgrades`, and `Casino` without routing.
+- Moved blackjack into its own casino screen built as a reusable foundation for future casino games.
+- Updated the casino layout so the dealer and player hand sections fill the left play area more cleanly.
+- Reduced excess spacing in blackjack hand panels and tightened text layout inside the casino table.
+- Removed artificial card framing so the imported card PNGs define the visual card shape directly.
+- Adjusted card rendering to preserve the PNG aspect ratio without stretching.
+- Reduced overall blackjack table vertical footprint while keeping the play area readable.
+- Moved blackjack stats out of the side rail and into a dropdown below the table to keep the action area cleaner.
 
 ### Fixed
-- Removed coupling where one building level controlled both RP gain and discount simultaneously.
-- Preserved old saves without power loss by migrating legacy levels cleanly.
+- Fixed casino view persistence to work with the newer top-view UI settings model.
+- Fixed card image stretching caused by forcing textures into a boxed card frame.
+- Fixed unnecessary vertical gaps between dealer/player labels, totals, and hand summaries.
+- Fixed casino unlock visibility so the tab stays hidden until the PIP unlock is purchased.
+- Fixed challenge and prestige transitions to safely cancel unresolved casino rounds without corrupting meta progress.
+
+### Notes
+- The casino currently ships with blackjack only, but the screen and state model are structured for future games.
+- Card textures are loaded from `src/main/PNG-cards-1.3`.
+- Save schema was extended to include persistent casino and blackjack state.
