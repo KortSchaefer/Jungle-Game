@@ -56,17 +56,22 @@ import {
   shouldBankerDrawBaccarat,
   shouldPlayerDrawBaccarat,
 } from "./baccarat.js";
+import {
+  buildAccountProgressionStatus,
+  getAccountRewardMultipliers,
+  getDefaultLifetimeStats,
+  sanitizeLifetimeStats,
+} from "./accountProgression.js";
 
 export const TICK_RATE_HZ = 10;
 const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
-export const GAME_STATE_SCHEMA_VERSION = 13;
+export const GAME_STATE_SCHEMA_VERSION = 15;
 const TREE_COST_GROWTH = 1.12;
 const MARKET_PRICE_PER_BANANA = 0.35;
 const AUTO_SELL_PRICE_PER_BANANA = 0.2;
 const BASE_CLICK_YIELD = 1;
 const PRESTIGE_UNLOCK_TOTAL_BANANAS = 1_000_000;
 const PRESTIGE_UNLOCK_TIER_INDEX = 5;
-const CEO_LEVEL_MULTIPLIER_BASE = 1.03;
 const SHIPPING_CAPACITY_PER_TIER = 0.05;
 const TREE_TIER_VALUE_MULTIPLIERS = Object.freeze([1, 1.25, 1.6, 2.2, 3.4, 5.5, 9.0]);
 
@@ -430,6 +435,28 @@ export const pipUpgrades = Object.freeze([
     unlockCondition: { type: "totalBananasEarned", value: 250_000 },
     effect: { baccaratUnlocked: true },
   },
+  {
+    id: "pip_qol_banana_tables",
+    name: "Banana Table Access",
+    description: "Use bananas instead of cash at casino tables.",
+    category: "QoL",
+    maxRank: 1,
+    baseCostPip: 20,
+    costGrowth: 2.0,
+    unlockCondition: { type: "totalBananasEarned", value: 150_000 },
+    effect: { casinoBananaBettingUnlocked: true },
+  },
+  {
+    id: "pip_qol_pip_tables",
+    name: "Primate High Stakes",
+    description: "Unlock capped PIP wagering at casino tables.",
+    category: "QoL",
+    maxRank: 1,
+    baseCostPip: 100,
+    costGrowth: 2.0,
+    unlockCondition: { type: "treeTierIndex", value: 6 },
+    effect: { casinoPipBettingUnlocked: true },
+  },
 ]);
 
 const timedEvents = Object.freeze({
@@ -614,12 +641,59 @@ const treeHarvestSystem = new TreeHarvestSystem({
     addBananas(harvestAmount, null);
     if (context?.source === "shake_tree") {
       gameState.totalClicks += 1;
+      addLifetimeStat("totalClicks", 1);
     }
   },
 });
 
 function getDefaultUpgradeModifiers() {
-  return { productionMultiplier: 1, clickMultiplier: 1, exportPriceMultiplier: 1, exportCooldownMultiplier: 1 };
+  return {
+    productionMultiplier: 1,
+    clickMultiplier: 1,
+    exportPriceMultiplier: 1,
+    exportCooldownMultiplier: 1,
+    researchPointMultiplier: 1,
+    prestigeGainMultiplier: 1,
+    prestigeFlatBonus: 0,
+    reactorOutputMultiplier: 1,
+    colliderOutputMultiplier: 1,
+    containmentOutputMultiplier: 1,
+    antimatterExportMultiplier: 1,
+  };
+}
+
+function getDefaultAccountProgression() {
+  return {
+    level: 1,
+    xpTotal: 0,
+    currentLevelXpStart: 0,
+    xpIntoLevel: 0,
+    nextLevelXp: 147,
+    progress: 0,
+    title: "Sapling Clerk",
+    nextRewardPreview: "Lv 2: +1 Profile Star",
+    profileStars: 0,
+    rewardMultipliers: {
+      productionMultiplier: 1,
+      exportPriceMultiplier: 1,
+      clickMultiplier: 1,
+      profileStars: 0,
+      rewardSteps: {
+        production: 0,
+        export: 0,
+        click: 0,
+        totalMilestones: 0,
+      },
+    },
+    contributionEntries: [],
+  };
+}
+
+function getPurchasedUpgradeModifiers() {
+  return gameState.purchasedUpgradeIds.reduce((current, upgradeId) => {
+    const upgrade = upgradeById.get(upgradeId);
+    return upgrade ? upgrade.effect(current) : current;
+  }, getDefaultUpgradeModifiers());
 }
 
 const DEFAULT_STATE = Object.freeze({
@@ -709,6 +783,8 @@ const DEFAULT_STATE = Object.freeze({
   challengeHistory: getDefaultChallengeHistory(),
   challengeRewardsUnlocked: getDefaultChallengeRewardsUnlocked(),
   challengeLastResult: getDefaultChallengeLastResult(),
+  lifetimeStats: getDefaultLifetimeStats(),
+  accountProgression: getDefaultAccountProgression(),
   casino: getDefaultCasinoState(),
   lastSaveTimestamp: Date.now(),
 });
@@ -717,6 +793,61 @@ export const gameState = { ...DEFAULT_STATE };
 
 const listeners = new Set();
 let tickTimer = null;
+
+function getLifetimeStatNumber(key) {
+  return clampNonNegative(Number(gameState.lifetimeStats?.[key]) || 0);
+}
+
+function setLifetimeStatNumber(key, value) {
+  gameState.lifetimeStats = {
+    ...getDefaultLifetimeStats(),
+    ...(gameState.lifetimeStats || {}),
+    [key]: clampNonNegative(Number(value) || 0),
+  };
+}
+
+function addLifetimeStat(key, amount) {
+  const safeAmount = clampNonNegative(Number(amount) || 0);
+  if (safeAmount <= 0) {
+    return;
+  }
+  setLifetimeStatNumber(key, addStable(getLifetimeStatNumber(key), safeAmount));
+}
+
+function buildAccountMetricsFromState() {
+  const casinoStats = gameState.casino?.casinoStats || {};
+  return {
+    bananasEarned: getLifetimeStatNumber("bananasEarned"),
+    cashEarned: getLifetimeStatNumber("cashEarned"),
+    totalClicks: getLifetimeStatNumber("totalClicks"),
+    totalShipments: getLifetimeStatNumber("totalShipments"),
+    contractsCompleted: getLifetimeStatNumber("contractsCompleted"),
+    prestigeCount: getLifetimeStatNumber("prestigeCount"),
+    pipEarned: getLifetimeStatNumber("pipEarned"),
+    pipSpent: getLifetimeStatNumber("pipSpent"),
+    researchPurchased: getLifetimeStatNumber("researchPurchased"),
+    achievementsUnlocked: getLifetimeStatNumber("achievementsUnlocked"),
+    antimatterBananasGenerated: getLifetimeStatNumber("antimatterBananasGenerated"),
+    weirdScienceStructuresBuilt: getLifetimeStatNumber("weirdScienceStructuresBuilt"),
+    highestTreeTierReached: getLifetimeStatNumber("highestTreeTierReached"),
+    casinoHandsPlayed: clampNonNegative(Number(casinoStats.totalGamesPlayed) || 0),
+  };
+}
+
+function refreshAccountProgression({ skipRecompute = false } = {}) {
+  const previousRewards = JSON.stringify(gameState.accountProgression?.rewardMultipliers || {});
+  const nextStatus = buildAccountProgressionStatus(buildAccountMetricsFromState());
+  gameState.accountProgression = nextStatus;
+  const nextRewards = JSON.stringify(nextStatus.rewardMultipliers || {});
+  if (!skipRecompute && previousRewards !== nextRewards) {
+    recomputeDerivedStats();
+  }
+  return nextStatus;
+}
+
+function getAccountRewardStatus() {
+  return gameState.accountProgression || getDefaultAccountProgression();
+}
 
 function clampNonNegative(value) {
   return Math.max(0, value);
@@ -803,6 +934,21 @@ function isRequirementMet(requirement, state = gameState) {
   }
   if (requirement.type === "antimatterBananas") {
     return state.antimatterBananas >= targetValue;
+  }
+  if (requirement.type === "bananaMatter") {
+    return state.bananaMatter >= targetValue;
+  }
+  if (requirement.type === "exoticPeelParticles") {
+    return state.exoticPeelParticles >= targetValue;
+  }
+  if (requirement.type === "quantumReactorLevel") {
+    return state.quantumReactorLevel >= targetValue;
+  }
+  if (requirement.type === "colliderLevel") {
+    return state.colliderLevel >= targetValue;
+  }
+  if (requirement.type === "containmentLevel") {
+    return state.containmentLevel >= targetValue;
   }
 
   return false;
@@ -1398,6 +1544,45 @@ function migrateLoadedState(rawState) {
       ...(migrated.casino || {}),
     };
   }
+  if (sourceSchemaVersion < 14) {
+    migrated.casino = {
+      ...getDefaultCasinoState(),
+      ...(migrated.casino || {}),
+      selectedWagerCurrency: sanitizeCasinoWagerCurrency(migrated.casino?.selectedWagerCurrency),
+    };
+  }
+  if (sourceSchemaVersion < 15) {
+    const casinoStats = migrated.casino?.casinoStats || {};
+    migrated.lifetimeStats = {
+      ...getDefaultLifetimeStats(),
+      bananasEarned: clampNonNegative(Number(migrated.totalBananasEarned) || 0),
+      cashEarned: clampNonNegative(Number(migrated.totalCashEarned) || 0),
+      totalClicks: clampNonNegative(Number(migrated.totalClicks) || 0),
+      totalShipments: clampNonNegative(Number(migrated.totalShipments) || 0),
+      contractsCompleted: clampNonNegative(Number(migrated.contractsCompleted) || 0),
+      pipEarned: clampNonNegative(Number(migrated.pip) || 0) + clampNonNegative(Number(migrated.pipSpentTotal) || 0),
+      pipSpent: clampNonNegative(Number(migrated.pipSpentTotal) || 0),
+      researchPurchased: Array.isArray(migrated.purchasedUpgradeIds) ? migrated.purchasedUpgradeIds.length : 0,
+      achievementsUnlocked: Array.isArray(migrated.unlockedAchievementIds) ? migrated.unlockedAchievementIds.length : 0,
+      antimatterBananasGenerated: clampNonNegative(Number(migrated.antimatterBananas) || 0),
+      weirdScienceStructuresBuilt:
+        clampNonNegative(Number(migrated.quantumReactorLevel) || 0) +
+        clampNonNegative(Number(migrated.colliderLevel) || 0) +
+        clampNonNegative(Number(migrated.containmentLevel) || 0),
+      highestTreeTierReached: clampNonNegative(Number(migrated.treeTierIndex) || 0),
+      prestigeCount: clampNonNegative(Number(migrated.prestigeCount) || 0),
+    };
+    migrated.accountProgression = getDefaultAccountProgression();
+    migrated.casino = {
+      ...getDefaultCasinoState(),
+      ...(migrated.casino || {}),
+      casinoStats: {
+        ...getDefaultCasinoState().casinoStats,
+        ...(migrated.casino?.casinoStats || {}),
+        totalGamesPlayed: clampNonNegative(Number(casinoStats.totalGamesPlayed) || 0),
+      },
+    };
+  }
 
   migrated.schemaVersion = GAME_STATE_SCHEMA_VERSION;
   return migrated;
@@ -1430,6 +1615,7 @@ function getAchievementConditionValue(condition) {
 function refreshAchievements() {
   const unlockedSet = new Set(gameState.unlockedAchievementIds);
   let unlockedNew = false;
+  let unlockedCount = 0;
 
   achievements.forEach((achievement) => {
     if (unlockedSet.has(achievement.id)) {
@@ -1440,10 +1626,15 @@ function refreshAchievements() {
     if (value >= (achievement.condition?.target || 0)) {
       unlockedSet.add(achievement.id);
       unlockedNew = true;
+      unlockedCount += 1;
     }
   });
 
   gameState.unlockedAchievementIds = Array.from(unlockedSet).filter((achievementId) => achievementById.has(achievementId));
+  if (unlockedCount > 0) {
+    addLifetimeStat("achievementsUnlocked", unlockedCount);
+    refreshAccountProgression();
+  }
   return unlockedNew;
 }
 
@@ -1523,18 +1714,13 @@ function getEffectiveCashCost(baseCost) {
 
 function getAntimatterExportBoostMultiplier() {
   const antimatter = clampNonNegative(Number(gameState.antimatterBananas) || 0);
+  const upgradeModifiers = getPurchasedUpgradeModifiers();
   // Strong late-game reward curve for weird science progression.
-  return stabilizeNumber(1 + Math.log10(antimatter + 1) * 4);
+  return stabilizeNumber((1 + Math.log10(antimatter + 1) * 4) * upgradeModifiers.antimatterExportMultiplier);
 }
 
-function getCeoLevelFromTotalBananas(totalBananasEarned) {
-  const total = clampNonNegative(Number(totalBananasEarned) || 0);
-  return Math.max(1, Math.floor(Math.log10(total + 1)) + 1);
-}
-
-function getCeoGlobalMultiplier() {
-  const level = getCeoLevelFromTotalBananas(gameState.totalBananasEarned);
-  return stabilizeNumber(CEO_LEVEL_MULTIPLIER_BASE ** Math.max(0, level - 1));
+function getAccountRewardModifiers() {
+  return getAccountRewardStatus().rewardMultipliers || getAccountRewardMultipliers(1);
 }
 
 function getResearchCompletionMultipliers() {
@@ -1543,6 +1729,8 @@ function getResearchCompletionMultipliers() {
     productionMultiplier: 1,
     clickMultiplier: 1,
     exportPriceMultiplier: 1,
+    researchPointMultiplier: 1,
+    prestigeGainMultiplier: 1,
   };
 
   const categories = ["Farming Tech", "Logistics", "Finance", "Weird Science"];
@@ -1580,6 +1768,10 @@ function getResearchCompletionMultipliers() {
     } else if (category === "Weird Science") {
       multipliers.clickMultiplier *= 1.14 ** completedRows;
       multipliers.productionMultiplier *= 1.06 ** completedRows;
+      multipliers.researchPointMultiplier *= 1.08 ** completedRows;
+      if (completedRows >= Math.ceil(rows.length / 2)) {
+        multipliers.prestigeGainMultiplier *= 1.04;
+      }
       if (completedRows === rows.length) {
         multipliers.clickMultiplier *= 1.25;
       }
@@ -1590,6 +1782,8 @@ function getResearchCompletionMultipliers() {
     productionMultiplier: stabilizeNumber(multipliers.productionMultiplier),
     clickMultiplier: stabilizeNumber(multipliers.clickMultiplier),
     exportPriceMultiplier: stabilizeNumber(multipliers.exportPriceMultiplier),
+    researchPointMultiplier: stabilizeNumber(multipliers.researchPointMultiplier),
+    prestigeGainMultiplier: stabilizeNumber(multipliers.prestigeGainMultiplier),
   };
 }
 
@@ -1634,10 +1828,8 @@ function getOrchardSystemBonuses() {
 }
 
 function recomputeDerivedStats() {
-  const upgradeModifiers = gameState.purchasedUpgradeIds.reduce((current, upgradeId) => {
-    const upgrade = upgradeById.get(upgradeId);
-    return upgrade ? upgrade.effect(current) : current;
-  }, getDefaultUpgradeModifiers());
+  const accountStatus = refreshAccountProgression({ skipRecompute: true });
+  const upgradeModifiers = getPurchasedUpgradeModifiers();
 
   const prestigeBonuses = getPrestigeBonuses();
   const packingMultiplier = getPackingShedMultiplier();
@@ -1645,15 +1837,15 @@ function recomputeDerivedStats() {
   const treeHarvestModifiers = getTreeHarvestModifiers();
   const pipModifiers = getPipModifiers();
   const orchardBonuses = getOrchardSystemBonuses();
-  const ceoGlobalMultiplier = getCeoGlobalMultiplier();
+  const accountRewardModifiers = accountStatus.rewardMultipliers || getAccountRewardMultipliers(1);
   const researchCompletionMultipliers = getResearchCompletionMultipliers();
   const challengeContext = resolveChallengeContext();
   const challengeModifiers = challengeContext.resolved;
   const rewardModifiers = resolveAscensionRewardContext().resolved;
   gameState.casino.unlocked = Boolean(pipModifiers.casinoUnlocked);
 
-  gameState.productionMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * pipModifiers.productionMultiplier * ceoGlobalMultiplier * researchCompletionMultipliers.productionMultiplier * challengeModifiers.productionMultiplier * rewardModifiers.productionMultiplier));
-  gameState.clickMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * pipModifiers.clickMultiplier * researchCompletionMultipliers.clickMultiplier * challengeModifiers.clickMultiplier * rewardModifiers.clickMultiplier));
+  gameState.productionMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.productionMultiplier * prestigeBonuses.productionMultiplier * gameState.evolutionProductionMultiplier * achievementMultipliers.productionMultiplier * pipModifiers.productionMultiplier * accountRewardModifiers.productionMultiplier * researchCompletionMultipliers.productionMultiplier * challengeModifiers.productionMultiplier * rewardModifiers.productionMultiplier));
+  gameState.clickMultiplier = Math.max(0, stabilizeNumber(upgradeModifiers.clickMultiplier * prestigeBonuses.clickMultiplier * achievementMultipliers.clickMultiplier * pipModifiers.clickMultiplier * accountRewardModifiers.clickMultiplier * researchCompletionMultipliers.clickMultiplier * challengeModifiers.clickMultiplier * rewardModifiers.clickMultiplier));
   gameState.exportPriceMultiplier = Math.max(
     0,
     stabilizeNumber(
@@ -1663,7 +1855,7 @@ function recomputeDerivedStats() {
         achievementMultipliers.exportPriceMultiplier *
         pipModifiers.exportPriceMultiplier *
         orchardBonuses.exportBonusMultiplier *
-        ceoGlobalMultiplier *
+        accountRewardModifiers.exportPriceMultiplier *
         researchCompletionMultipliers.exportPriceMultiplier *
         challengeModifiers.exportPriceMultiplier *
         rewardModifiers.exportPriceMultiplier
@@ -1964,6 +2156,8 @@ export function getPipModifiers() {
     casinoUnlocked: false,
     mississippiStudUnlocked: false,
     baccaratUnlocked: false,
+    casinoBananaBettingUnlocked: false,
+    casinoPipBettingUnlocked: false,
   };
 
   pipUpgrades.forEach((upgrade) => {
@@ -2026,6 +2220,12 @@ export function getPipModifiers() {
     if (effect.baccaratUnlocked) {
       modifiers.baccaratUnlocked = true;
     }
+    if (effect.casinoBananaBettingUnlocked) {
+      modifiers.casinoBananaBettingUnlocked = true;
+    }
+    if (effect.casinoPipBettingUnlocked) {
+      modifiers.casinoPipBettingUnlocked = true;
+    }
   });
 
   return {
@@ -2047,6 +2247,8 @@ export function getPipModifiers() {
     casinoUnlocked: Boolean(modifiers.casinoUnlocked),
     mississippiStudUnlocked: Boolean(modifiers.mississippiStudUnlocked),
     baccaratUnlocked: Boolean(modifiers.baccaratUnlocked),
+    casinoBananaBettingUnlocked: Boolean(modifiers.casinoBananaBettingUnlocked),
+    casinoPipBettingUnlocked: Boolean(modifiers.casinoPipBettingUnlocked),
   };
 }
 
@@ -2125,7 +2327,17 @@ export function getResearchPointsPerSecond() {
   const achievementMultipliers = getAchievementMultipliers();
   const challenge = resolveChallengeContext().resolved;
   const reward = resolveAscensionRewardContext().resolved;
-  return stabilizeNumber(gameState.researchLabLevel * 0.06 * achievementMultipliers.researchMultiplier * challenge.researchPointMultiplier * reward.researchPointMultiplier);
+  const upgradeModifiers = getPurchasedUpgradeModifiers();
+  const researchRows = getResearchCompletionMultipliers();
+  return stabilizeNumber(
+    gameState.researchLabLevel *
+      0.06 *
+      achievementMultipliers.researchMultiplier *
+      challenge.researchPointMultiplier *
+      reward.researchPointMultiplier *
+      upgradeModifiers.researchPointMultiplier *
+      researchRows.researchPointMultiplier
+  );
 }
 
 function hasResearchPrerequisites(upgrade) {
@@ -2167,6 +2379,8 @@ function applyShipmentToContracts(buyerId, shipmentAmount) {
       addCash(contract.rewardCash);
       changeBuyerReputation(buyerId, contract.rewardRep);
       gameState.contractsCompleted += 1;
+      addLifetimeStat("contractsCompleted", 1);
+      refreshAccountProgression();
       if (contract.rewardRareItem) {
         gameState.rareItems = [...gameState.rareItems, contract.rewardRareItem];
       }
@@ -2273,7 +2487,12 @@ export function getCurrentQuestStatus() {
 export function getPrestigeGainFromTotalBananas(totalBananasEarned) {
   const safeTotal = Math.max(0, Number(totalBananasEarned) || 0);
   const scaledLog = Math.log10(safeTotal + 1);
-  return Math.max(0, Math.floor((scaledLog - 5) * 5));
+  const upgradeModifiers = getPurchasedUpgradeModifiers();
+  const researchRows = getResearchCompletionMultipliers();
+  const baseGain = Math.max(0, Math.floor((scaledLog - 5) * 5));
+  const scaledGain = stabilizeNumber(baseGain * upgradeModifiers.prestigeGainMultiplier * researchRows.prestigeGainMultiplier);
+  const flatBonus = Math.max(0, Math.floor(Number(upgradeModifiers.prestigeFlatBonus) || 0));
+  return Math.max(0, Math.floor(scaledGain) + flatBonus);
 }
 
 export function getPrestigeGainPreview() {
@@ -2377,6 +2596,8 @@ function addBananasToType(typeId, amount) {
   gameState.bananas = addStable(gameState.bananas, safeAmount);
   gameState.bananaInventory.standard = gameState.bananas;
   gameState.totalBananasEarned = addStable(gameState.totalBananasEarned, safeAmount);
+  addLifetimeStat("bananasEarned", safeAmount);
+  refreshAccountProgression();
 }
 
 function removeBananasFromType(typeId, amount) {
@@ -2437,6 +2658,10 @@ function addWeirdScienceResourceValue(resourceKey, amount) {
   }
 
   gameState[resourceKey] = addStable(getWeirdScienceResourceValue(resourceKey), safeAmount);
+  if (resourceKey === "antimatterBananas") {
+    addLifetimeStat("antimatterBananasGenerated", safeAmount);
+    refreshAccountProgression();
+  }
 }
 
 function removeWeirdScienceResourceValue(resourceKey, amount) {
@@ -2458,10 +2683,116 @@ function removeWeirdScienceResourceValue(resourceKey, amount) {
 function addCash(amount) {
   gameState.cash = addStable(gameState.cash, amount);
   gameState.totalCashEarned = addStable(gameState.totalCashEarned, amount);
+  addLifetimeStat("cashEarned", amount);
+  refreshAccountProgression();
 }
 
 function removeCash(amount) {
   gameState.cash = clampNonNegative(addStable(gameState.cash, -amount));
+}
+
+const CASINO_WAGER_CURRENCIES = Object.freeze(["cash", "bananas", "pip"]);
+
+function sanitizeCasinoWagerCurrency(value) {
+  return CASINO_WAGER_CURRENCIES.includes(value) ? value : "cash";
+}
+
+function getAvailableCasinoWagerCurrencies() {
+  const pip = getPipModifiers();
+  return {
+    cash: true,
+    bananas: Boolean(pip.casinoBananaBettingUnlocked),
+    pip: Boolean(pip.casinoPipBettingUnlocked),
+  };
+}
+
+function getSelectedCasinoWagerCurrency() {
+  const casino = gameState.casino || getDefaultCasinoState();
+  const selected = sanitizeCasinoWagerCurrency(casino.selectedWagerCurrency);
+  const available = getAvailableCasinoWagerCurrencies();
+  return available[selected] ? selected : "cash";
+}
+
+export function setSelectedCasinoWagerCurrency(currencyId) {
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
+  const available = getAvailableCasinoWagerCurrencies();
+  if (!available[safeCurrency]) {
+    return false;
+  }
+  if (!gameState.casino || typeof gameState.casino !== "object") {
+    gameState.casino = getDefaultCasinoState();
+  }
+  gameState.casino.selectedWagerCurrency = safeCurrency;
+  notifyListeners();
+  return true;
+}
+
+function getCasinoWagerBalance(currencyId) {
+  if (currencyId === "bananas") {
+    return clampNonNegative(Number(gameState.bananas) || 0);
+  }
+  if (currencyId === "pip") {
+    return clampNonNegative(Number(gameState.pip) || 0);
+  }
+  return clampNonNegative(Number(gameState.cash) || 0);
+}
+
+function getCasinoPipWagerCap() {
+  return Math.max(1, Math.floor(Math.min(getCasinoWagerBalance("pip"), 25)));
+}
+
+function getCasinoMaxWagerForCurrency(currencyId) {
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
+  if (safeCurrency === "pip") {
+    return getCasinoPipWagerCap();
+  }
+  return Math.floor(getCasinoWagerBalance(safeCurrency));
+}
+
+function canAffordCasinoWager(currencyId, amount) {
+  const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
+  if (safeAmount <= 0) {
+    return false;
+  }
+  return safeAmount <= getCasinoMaxWagerForCurrency(currencyId);
+}
+
+function withdrawCasinoWager(currencyId, amount) {
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
+  const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!canAffordCasinoWager(safeCurrency, safeAmount)) {
+    return false;
+  }
+  if (safeCurrency === "bananas") {
+    return removeBananasAny(safeAmount) >= safeAmount;
+  }
+  if (safeCurrency === "pip") {
+    gameState.pip = clampNonNegative(addStable(gameState.pip, -safeAmount));
+    return true;
+  }
+  removeCash(safeAmount);
+  return true;
+}
+
+function refundCasinoWager(currencyId, amount) {
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
+  const safeAmount = Math.max(0, Number(amount) || 0);
+  if (safeAmount <= 0) {
+    return;
+  }
+  if (safeCurrency === "bananas") {
+    addBananas(safeAmount);
+    return;
+  }
+  if (safeCurrency === "pip") {
+    gameState.pip = addStable(gameState.pip, safeAmount);
+    return;
+  }
+  addCash(safeAmount);
+}
+
+function payoutCasinoWager(currencyId, amount) {
+  refundCasinoWager(currencyId, amount);
 }
 
 function getCasinoBlackjackState() {
@@ -2545,26 +2876,60 @@ function updateLargestSingleBet(stats, amount) {
   stats.largestSingleBet = Math.max(stats.largestSingleBet, Math.max(0, Number(amount) || 0));
 }
 
-function addCasinoWager(amount, gameKey = "blackjack") {
+function ensureCurrencyBuckets(target, bucketKey) {
+  const bucket = target[bucketKey] || {};
+  target[bucketKey] = {
+    cash: Math.max(0, Number(bucket.cash) || 0),
+    bananas: Math.max(0, Number(bucket.bananas) || 0),
+    pip: Math.max(0, Number(bucket.pip) || 0),
+  };
+  return target[bucketKey];
+}
+
+function addCurrencyBucketValue(target, bucketKey, currencyId, amount) {
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
   const safeAmount = Math.max(0, Number(amount) || 0);
   if (safeAmount <= 0) {
     return;
   }
-  if (gameKey === "mississippi_stud") {
-    gameState.casino.mississippiStudStats.totalCashWagered = addStable(gameState.casino.mississippiStudStats.totalCashWagered, safeAmount);
-    gameState.casino.mississippiStudStats.largestAnte = Math.max(gameState.casino.mississippiStudStats.largestAnte, safeAmount);
-  } else if (gameKey === "baccarat") {
-    gameState.casino.baccaratStats.totalCashWagered = addStable(gameState.casino.baccaratStats.totalCashWagered, safeAmount);
-    updateLargestSingleBet(gameState.casino.baccaratStats, safeAmount);
-  } else {
-    gameState.casino.blackjackStats.totalCashWagered = addStable(gameState.casino.blackjackStats.totalCashWagered, safeAmount);
-    updateLargestSingleBet(gameState.casino.blackjackStats, safeAmount);
-  }
-  gameState.casino.casinoStats.totalCasinoCashWagered = addStable(gameState.casino.casinoStats.totalCasinoCashWagered, safeAmount);
+  const bucket = ensureCurrencyBuckets(target, bucketKey);
+  bucket[safeCurrency] = addStable(bucket[safeCurrency], safeAmount);
 }
 
-function finalizeBlackjackHandStats(hand, netChange) {
+function addCasinoWager(amount, gameKey = "blackjack", currencyId = "cash") {
+  const safeAmount = Math.max(0, Number(amount) || 0);
+  if (safeAmount <= 0) {
+    return;
+  }
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
+  if (gameKey === "mississippi_stud") {
+    if (safeCurrency === "cash") {
+      gameState.casino.mississippiStudStats.totalCashWagered = addStable(gameState.casino.mississippiStudStats.totalCashWagered, safeAmount);
+    }
+    addCurrencyBucketValue(gameState.casino.mississippiStudStats, "wageredByCurrency", safeCurrency, safeAmount);
+    gameState.casino.mississippiStudStats.largestAnte = Math.max(gameState.casino.mississippiStudStats.largestAnte, safeAmount);
+  } else if (gameKey === "baccarat") {
+    if (safeCurrency === "cash") {
+      gameState.casino.baccaratStats.totalCashWagered = addStable(gameState.casino.baccaratStats.totalCashWagered, safeAmount);
+    }
+    addCurrencyBucketValue(gameState.casino.baccaratStats, "wageredByCurrency", safeCurrency, safeAmount);
+    updateLargestSingleBet(gameState.casino.baccaratStats, safeAmount);
+  } else {
+    if (safeCurrency === "cash") {
+      gameState.casino.blackjackStats.totalCashWagered = addStable(gameState.casino.blackjackStats.totalCashWagered, safeAmount);
+    }
+    addCurrencyBucketValue(gameState.casino.blackjackStats, "wageredByCurrency", safeCurrency, safeAmount);
+    updateLargestSingleBet(gameState.casino.blackjackStats, safeAmount);
+  }
+  if (safeCurrency === "cash") {
+    gameState.casino.casinoStats.totalCasinoCashWagered = addStable(gameState.casino.casinoStats.totalCasinoCashWagered, safeAmount);
+  }
+  addCurrencyBucketValue(gameState.casino.casinoStats, "totalCasinoWageredByCurrency", safeCurrency, safeAmount);
+}
+
+function finalizeBlackjackHandStats(hand, netChange, currencyId = "cash") {
   const stats = gameState.casino.blackjackStats;
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
   stats.handsPlayed += 1;
   if (hand.result === "win" || hand.result === "blackjack") {
     stats.handsWon += 1;
@@ -2586,15 +2951,23 @@ function finalizeBlackjackHandStats(hand, netChange) {
     stats.playerBusts += 1;
   }
   if (netChange > 0) {
-    stats.totalCashWon = addStable(stats.totalCashWon, netChange);
-    gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, netChange);
+    if (safeCurrency === "cash") {
+      stats.totalCashWon = addStable(stats.totalCashWon, netChange);
+      gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, netChange);
+    }
+    addCurrencyBucketValue(stats, "wonByCurrency", safeCurrency, netChange);
+    addCurrencyBucketValue(gameState.casino.casinoStats, "totalCasinoWonByCurrency", safeCurrency, netChange);
     stats.largestSingleWin = Math.max(stats.largestSingleWin, netChange);
   } else if (netChange < 0) {
-    stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(netChange));
+    if (safeCurrency === "cash") {
+      stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(netChange));
+    }
+    addCurrencyBucketValue(stats, "lostByCurrency", safeCurrency, Math.abs(netChange));
   }
 }
 
 function settleBlackjackHands(blackjackState) {
+  const wagerCurrency = sanitizeCasinoWagerCurrency(blackjackState.wagerCurrency);
   const dealerValue = getBlackjackHandValue(blackjackState.dealerCards);
   if (dealerValue.isBust) {
     gameState.casino.blackjackStats.dealerBusts += 1;
@@ -2603,7 +2976,7 @@ function settleBlackjackHands(blackjackState) {
   const netResults = [];
   blackjackState.playerHands.forEach((hand) => {
     if (hand.resolved && (hand.result === "surrender" || hand.result === "bust")) {
-      finalizeBlackjackHandStats(hand, hand.result === "surrender" ? -(hand.wager / 2) : -hand.wager);
+      finalizeBlackjackHandStats(hand, hand.result === "surrender" ? -(hand.wager / 2) : -hand.wager, wagerCurrency);
       return;
     }
 
@@ -2635,14 +3008,14 @@ function settleBlackjackHands(blackjackState) {
     }
 
     if (payout > 0) {
-      addCash(payout);
+      payoutCasinoWager(wagerCurrency, payout);
     }
     hand.payout = stabilizeNumber(payout);
     hand.result = result;
     hand.resolved = true;
     const netChange = payout - hand.wager;
     netResults.push(netChange);
-    finalizeBlackjackHandStats(hand, netChange);
+    finalizeBlackjackHandStats(hand, netChange, wagerCurrency);
   });
 
   blackjackState.handResultSummary = blackjackState.playerHands.map((hand, index) => `Hand ${index + 1}: ${hand.result || "loss"}`).join(" | ");
@@ -2652,13 +3025,17 @@ function settleBlackjackHands(blackjackState) {
 }
 
 function resolveDealerBlackjackPeek(blackjackState) {
+  const wagerCurrency = sanitizeCasinoWagerCurrency(blackjackState.wagerCurrency);
   blackjackState.dealerHoleCardRevealed = true;
   blackjackState.dealerCards = blackjackState.dealerCards.map((card, index) => (index === 1 ? { ...card, faceUp: true } : card));
   const dealerNatural = isNaturalBlackjack(blackjackState.dealerCards);
   const insuranceBet = Math.max(0, Number(blackjackState.insuranceBet) || 0);
   if (!dealerNatural) {
     if (insuranceBet > 0) {
-      gameState.casino.blackjackStats.totalCashLost = addStable(gameState.casino.blackjackStats.totalCashLost, insuranceBet);
+      if (wagerCurrency === "cash") {
+        gameState.casino.blackjackStats.totalCashLost = addStable(gameState.casino.blackjackStats.totalCashLost, insuranceBet);
+      }
+      addCurrencyBucketValue(gameState.casino.blackjackStats, "lostByCurrency", wagerCurrency, insuranceBet);
       blackjackState.insuranceBet = 0;
     }
     const playerNatural = blackjackState.playerHands.some((hand) => isNaturalBlackjack(hand.cards) && !hand.isSplitHand);
@@ -2672,8 +3049,15 @@ function resolveDealerBlackjackPeek(blackjackState) {
   }
 
   if (insuranceBet > 0) {
-    addCash(insuranceBet * 3);
+    payoutCasinoWager(wagerCurrency, insuranceBet * 3);
     gameState.casino.blackjackStats.insuranceWins += 1;
+    const netInsuranceWin = insuranceBet * 2;
+    if (wagerCurrency === "cash") {
+      gameState.casino.blackjackStats.totalCashWon = addStable(gameState.casino.blackjackStats.totalCashWon, netInsuranceWin);
+      gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, netInsuranceWin);
+    }
+    addCurrencyBucketValue(gameState.casino.blackjackStats, "wonByCurrency", wagerCurrency, netInsuranceWin);
+    addCurrencyBucketValue(gameState.casino.casinoStats, "totalCasinoWonByCurrency", wagerCurrency, netInsuranceWin);
     blackjackState.insuranceBet = 0;
   }
   settleBlackjackHands(blackjackState);
@@ -2693,6 +3077,7 @@ function resetBlackjackRound(blackjackState, reasonText = "") {
   blackjackState.canSurrender = false;
   blackjackState.handResultSummary = reasonText;
   blackjackState.lastPlayedAt = Date.now();
+  blackjackState.wagerCurrency = "cash";
 }
 
 function syncFavoriteCasinoGame(gameId = "blackjack") {
@@ -2730,11 +3115,18 @@ function canSurrenderCurrentBlackjackHand(blackjackState) {
 export function getCasinoStatus() {
   const casino = gameState.casino || getDefaultCasinoState();
   const pip = getPipModifiers();
+  const availableCurrencies = getAvailableCasinoWagerCurrencies();
+  const selectedWagerCurrency = getSelectedCasinoWagerCurrency();
   return {
     unlocked: Boolean(casino.unlocked),
     mississippiStudUnlocked: Boolean(pip.mississippiStudUnlocked),
     baccaratUnlocked: Boolean(pip.baccaratUnlocked),
+    bananaBettingUnlocked: Boolean(pip.casinoBananaBettingUnlocked),
+    pipBettingUnlocked: Boolean(pip.casinoPipBettingUnlocked),
     activeGameId: String(casino.activeGameId || "blackjack"),
+    selectedWagerCurrency,
+    availableCurrencies,
+    selectedWagerBalance: getCasinoWagerBalance(selectedWagerCurrency),
     casinoStats: { ...casino.casinoStats },
     blackjackStats: { ...casino.blackjackStats },
     mississippiStudStats: { ...casino.mississippiStudStats },
@@ -2762,8 +3154,12 @@ export function setCasinoActiveGame(gameId) {
 
 export function getBlackjackStatus() {
   const blackjackState = getCasinoBlackjackState();
+  const selectedWagerCurrency = getSelectedCasinoWagerCurrency();
   const currentHand = getCurrentBlackjackHand(blackjackState);
   const currentHandValue = currentHand ? getBlackjackHandValue(currentHand.cards) : null;
+  const activeCurrency = sanitizeCasinoWagerCurrency(
+    [BLACKJACK_PHASES.idle, BLACKJACK_PHASES.settled].includes(blackjackState.tablePhase) ? selectedWagerCurrency : blackjackState.wagerCurrency
+  );
   return {
     unlocked: Boolean(gameState.casino.unlocked),
     activeGameId: gameState.casino.activeGameId,
@@ -2782,18 +3178,22 @@ export function getBlackjackStatus() {
     activeHandIndex: blackjackState.activeHandIndex,
     mainBet: blackjackState.mainBet,
     insuranceBet: blackjackState.insuranceBet,
+    wagerCurrency: activeCurrency,
+    selectedWagerCurrency,
+    maxWager: getCasinoMaxWagerForCurrency(selectedWagerCurrency),
     offeredInsurance: blackjackState.offeredInsurance,
     handResultSummary: blackjackState.handResultSummary,
     lastPlayedAt: blackjackState.lastPlayedAt,
     canDeal: gameState.casino.unlocked && (blackjackState.tablePhase === BLACKJACK_PHASES.idle || blackjackState.tablePhase === BLACKJACK_PHASES.settled),
     canHit: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && !currentHand.resolved && !currentHand.stood && !currentHand.splitFromAces && currentHandValue?.total < 21),
     canStand: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && !currentHand.resolved),
-    canDouble: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && currentHand.cards.length === 2 && !currentHand.resolved && !currentHand.splitFromAces && gameState.cash >= currentHand.wager),
-    canSplit: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && !currentHand.isSplitHand && canSplitBlackjackHand(currentHand) && gameState.cash >= currentHand.wager),
-    canTakeInsurance: blackjackState.tablePhase === BLACKJACK_PHASES.insurance_offer && gameState.cash >= Math.floor(Math.max(0, blackjackState.mainBet) / 2),
+    canDouble: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && currentHand.cards.length === 2 && !currentHand.resolved && !currentHand.splitFromAces && canAffordCasinoWager(activeCurrency, currentHand.wager)),
+    canSplit: Boolean(currentHand && blackjackState.tablePhase === BLACKJACK_PHASES.player_turn && !currentHand.isSplitHand && canSplitBlackjackHand(currentHand) && canAffordCasinoWager(activeCurrency, currentHand.wager)),
+    canTakeInsurance: blackjackState.tablePhase === BLACKJACK_PHASES.insurance_offer && canAffordCasinoWager(activeCurrency, Math.floor(Math.max(0, Number(blackjackState.mainBet) || 0) / 2)),
     canDeclineInsurance: blackjackState.tablePhase === BLACKJACK_PHASES.insurance_offer,
     canSurrender: canSurrenderCurrentBlackjackHand(blackjackState),
     outstandingStake: getOutstandingBlackjackStake(blackjackState),
+    availableBalance: getCasinoWagerBalance(activeCurrency),
     blackjackStats: { ...gameState.casino.blackjackStats },
     casinoStats: { ...gameState.casino.casinoStats },
   };
@@ -2809,7 +3209,7 @@ export function cancelCasinoRound(reason = "round_cancelled") {
   const blackjackState = getCasinoBlackjackState();
   const outstandingStake = getOutstandingBlackjackStake(blackjackState);
   if (outstandingStake > 0) {
-    addCash(outstandingStake);
+    refundCasinoWager(blackjackState.wagerCurrency, outstandingStake);
   }
   resetBlackjackRound(blackjackState, `Round cancelled: ${String(reason).replace(/_/g, " ")}`);
   notifyListeners();
@@ -2821,7 +3221,8 @@ export function startBlackjackHand(betCash) {
     return { success: false, reason: "casino_locked" };
   }
   const safeBet = Math.max(0, Math.floor(Number(betCash) || 0));
-  if (safeBet <= 0 || safeBet > gameState.cash) {
+  const wagerCurrency = getSelectedCasinoWagerCurrency();
+  if (!canAffordCasinoWager(wagerCurrency, safeBet)) {
     return { success: false, reason: "invalid_bet" };
   }
   const blackjackState = getCasinoBlackjackState();
@@ -2829,8 +3230,8 @@ export function startBlackjackHand(betCash) {
     return { success: false, reason: "round_already_active" };
   }
 
-  removeCash(safeBet);
-  addCasinoWager(safeBet, "blackjack");
+  withdrawCasinoWager(wagerCurrency, safeBet);
+  addCasinoWager(safeBet, "blackjack", wagerCurrency);
   syncFavoriteCasinoGame("blackjack");
   gameState.casino.casinoStats.totalGamesPlayed += 1;
   blackjackState.deck = createShuffledBlackjackDeck();
@@ -2846,6 +3247,7 @@ export function startBlackjackHand(betCash) {
   blackjackState.canSurrender = true;
   blackjackState.handResultSummary = "";
   blackjackState.lastPlayedAt = Date.now();
+  blackjackState.wagerCurrency = wagerCurrency;
   blackjackState.tablePhase = BLACKJACK_PHASES.player_turn;
 
   const dealerUpcard = blackjackState.dealerCards[0];
@@ -2879,11 +3281,11 @@ export function declineInsuranceBlackjack() {
 export function takeInsuranceBlackjack() {
   const blackjackState = getCasinoBlackjackState();
   const insuranceStake = Math.floor(Math.max(0, Number(blackjackState.mainBet) || 0) / 2);
-  if (blackjackState.tablePhase !== BLACKJACK_PHASES.insurance_offer || insuranceStake <= 0 || gameState.cash < insuranceStake) {
+  if (blackjackState.tablePhase !== BLACKJACK_PHASES.insurance_offer || insuranceStake <= 0 || !canAffordCasinoWager(blackjackState.wagerCurrency, insuranceStake)) {
     return false;
   }
-  removeCash(insuranceStake);
-  addCasinoWager(insuranceStake, "blackjack");
+  withdrawCasinoWager(blackjackState.wagerCurrency, insuranceStake);
+  addCasinoWager(insuranceStake, "blackjack", blackjackState.wagerCurrency);
   blackjackState.insuranceBet = insuranceStake;
   blackjackState.offeredInsurance = false;
   gameState.casino.blackjackStats.insuranceBetsPlaced += 1;
@@ -2936,11 +3338,11 @@ export function standBlackjack() {
 export function doubleDownBlackjack() {
   const blackjackState = getCasinoBlackjackState();
   const hand = getCurrentBlackjackHand(blackjackState);
-  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.cards.length !== 2 || hand.resolved || hand.splitFromAces || gameState.cash < hand.wager) {
+  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.cards.length !== 2 || hand.resolved || hand.splitFromAces || !canAffordCasinoWager(blackjackState.wagerCurrency, hand.wager)) {
     return false;
   }
-  removeCash(hand.wager);
-  addCasinoWager(hand.wager, "blackjack");
+  withdrawCasinoWager(blackjackState.wagerCurrency, hand.wager);
+  addCasinoWager(hand.wager, "blackjack", blackjackState.wagerCurrency);
   hand.wager = stabilizeNumber(hand.wager * 2);
   hand.doubled = true;
   hand.actionCount += 1;
@@ -2966,13 +3368,13 @@ export function doubleDownBlackjack() {
 export function splitBlackjack() {
   const blackjackState = getCasinoBlackjackState();
   const hand = getCurrentBlackjackHand(blackjackState);
-  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.isSplitHand || !canSplitBlackjackHand(hand) || gameState.cash < hand.wager) {
+  if (!hand || blackjackState.tablePhase !== BLACKJACK_PHASES.player_turn || hand.isSplitHand || !canSplitBlackjackHand(hand) || !canAffordCasinoWager(blackjackState.wagerCurrency, hand.wager)) {
     return false;
   }
 
   const splitIndex = blackjackState.activeHandIndex;
-  removeCash(hand.wager);
-  addCasinoWager(hand.wager, "blackjack");
+  withdrawCasinoWager(blackjackState.wagerCurrency, hand.wager);
+  addCasinoWager(hand.wager, "blackjack", blackjackState.wagerCurrency);
   gameState.casino.blackjackStats.splitHandsCreated += 1;
   const isAces = hand.cards[0]?.rank === "A";
   const leftHand = createBlackjackHand([hand.cards[0], drawBlackjackCard(blackjackState, true)], hand.wager, {
@@ -3013,7 +3415,7 @@ export function surrenderBlackjack() {
   hand.resolved = true;
   hand.result = "surrender";
   hand.payout = stabilizeNumber(hand.wager / 2);
-  addCash(hand.payout);
+  refundCasinoWager(blackjackState.wagerCurrency, hand.payout);
   advanceBlackjackTurn(blackjackState);
   if (blackjackState.tablePhase === BLACKJACK_PHASES.dealer_turn) {
     resolveBlackjackDealerTurn(blackjackState);
@@ -3045,14 +3447,16 @@ function resetMississippiStudRound(studState, reasonText = "") {
   studState.resultText = reasonText;
   studState.lastPlayedAt = Date.now();
   studState.folded = false;
+  studState.wagerCurrency = "cash";
 }
 
 function getMississippiStudPhaseForDecision(index) {
   return [MISSISSIPPI_STUD_PHASES.first_decision, MISSISSIPPI_STUD_PHASES.second_decision, MISSISSIPPI_STUD_PHASES.third_decision][index] || MISSISSIPPI_STUD_PHASES.settled;
 }
 
-function finalizeMississippiStudStats(result, totalWager, netChange) {
+function finalizeMississippiStudStats(result, totalWager, netChange, currencyId = "cash") {
   const stats = gameState.casino.mississippiStudStats;
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
   stats.handsPlayed += 1;
   if (result.qualifies) {
     stats.handsWon += 1;
@@ -3063,11 +3467,18 @@ function finalizeMississippiStudStats(result, totalWager, netChange) {
     stats.currentWinStreak = 0;
   }
   if (netChange > 0) {
-    stats.totalCashWon = addStable(stats.totalCashWon, netChange);
-    gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, netChange);
+    if (safeCurrency === "cash") {
+      stats.totalCashWon = addStable(stats.totalCashWon, netChange);
+      gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, netChange);
+    }
+    addCurrencyBucketValue(stats, "wonByCurrency", safeCurrency, netChange);
+    addCurrencyBucketValue(gameState.casino.casinoStats, "totalCasinoWonByCurrency", safeCurrency, netChange);
     stats.largestPayout = Math.max(stats.largestPayout, netChange + totalWager);
   } else if (netChange < 0) {
-    stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(netChange));
+    if (safeCurrency === "cash") {
+      stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(netChange));
+    }
+    addCurrencyBucketValue(stats, "lostByCurrency", safeCurrency, Math.abs(netChange));
   }
 
   const rankStatKey = {
@@ -3088,11 +3499,12 @@ function finalizeMississippiStudStats(result, totalWager, netChange) {
 
 function settleMississippiStudRound(studState) {
   const result = evaluateMississippiStudHand(studState);
+  const wagerCurrency = sanitizeCasinoWagerCurrency(studState.wagerCurrency);
   const totalWager = getMississippiStudCommittedWager(studState);
   const payoutMultiplier = Math.max(0, Number(result.payoutMultiplier) || 0);
   const totalReturn = result.qualifies ? stabilizeNumber(totalWager * (1 + payoutMultiplier)) : 0;
   if (totalReturn > 0) {
-    addCash(totalReturn);
+    payoutCasinoWager(wagerCurrency, totalReturn);
   }
   studState.revealedCommunityCount = 3;
   studState.handRank = result.rankName;
@@ -3103,7 +3515,7 @@ function settleMississippiStudRound(studState) {
     ? `${result.rankName} pays ${payoutMultiplier}:1 on total action.`
     : `${result.rankName} does not qualify.`;
   const netChange = totalReturn - totalWager;
-  finalizeMississippiStudStats(result, totalWager, netChange);
+  finalizeMississippiStudStats(result, totalWager, netChange, wagerCurrency);
 }
 
 function advanceMississippiStudRound(studState) {
@@ -3123,12 +3535,14 @@ function advanceMississippiStudRound(studState) {
 
 export function getMississippiStudStatus() {
   const studState = getCasinoMississippiStudState();
+  const selectedWagerCurrency = getSelectedCasinoWagerCurrency();
   const fullHand = [...studState.playerCards, ...studState.communityCards];
   const evaluation = studState.tablePhase === MISSISSIPPI_STUD_PHASES.settled ? evaluateMississippiStudHand(studState) : null;
   const currentPhase = studState.tablePhase;
   const canDeal = gameState.casino.unlocked && [MISSISSIPPI_STUD_PHASES.idle, MISSISSIPPI_STUD_PHASES.settled, MISSISSIPPI_STUD_PHASES.folded].includes(currentPhase);
   const canBetStreet = [MISSISSIPPI_STUD_PHASES.first_decision, MISSISSIPPI_STUD_PHASES.second_decision, MISSISSIPPI_STUD_PHASES.third_decision].includes(currentPhase);
   const anteBet = Math.max(0, Number(studState.anteBet) || 0);
+  const activeCurrency = sanitizeCasinoWagerCurrency(canDeal ? selectedWagerCurrency : studState.wagerCurrency);
   return {
     unlocked: Boolean(gameState.casino.unlocked),
     activeGameId: gameState.casino.activeGameId,
@@ -3136,6 +3550,9 @@ export function getMississippiStudStatus() {
     playerCards: studState.playerCards.map((card) => ({ ...card, faceUp: true })),
     communityCards: getVisibleMississippiStudCommunityCards(studState),
     anteBet,
+    wagerCurrency: activeCurrency,
+    selectedWagerCurrency,
+    maxWager: getCasinoMaxWagerForCurrency(selectedWagerCurrency),
     streetBets: [...studState.streetBets],
     currentDecisionIndex: studState.currentDecisionIndex,
     totalCommitted: getMississippiStudCommittedWager(studState),
@@ -3145,10 +3562,11 @@ export function getMississippiStudStatus() {
     resultText: studState.resultText,
     lastPlayedAt: studState.lastPlayedAt,
     canDeal,
-    canBet1x: canBetStreet && gameState.cash >= anteBet,
-    canBet2x: canBetStreet && gameState.cash >= anteBet * 2,
-    canBet3x: canBetStreet && gameState.cash >= anteBet * 3,
+    canBet1x: canBetStreet && canAffordCasinoWager(activeCurrency, anteBet),
+    canBet2x: canBetStreet && canAffordCasinoWager(activeCurrency, anteBet * 2),
+    canBet3x: canBetStreet && canAffordCasinoWager(activeCurrency, anteBet * 3),
     canFold: canBetStreet,
+    availableBalance: getCasinoWagerBalance(activeCurrency),
     evaluation,
     fullHand,
     stats: { ...gameState.casino.mississippiStudStats },
@@ -3162,15 +3580,16 @@ export function startMississippiStudHand(anteBet) {
     return { success: false, reason: "casino_locked" };
   }
   const safeAnte = Math.max(0, Math.floor(Number(anteBet) || 0));
-  if (safeAnte <= 0 || safeAnte > gameState.cash) {
+  const wagerCurrency = getSelectedCasinoWagerCurrency();
+  if (!canAffordCasinoWager(wagerCurrency, safeAnte)) {
     return { success: false, reason: "invalid_bet" };
   }
   const studState = getCasinoMississippiStudState();
   if (![MISSISSIPPI_STUD_PHASES.idle, MISSISSIPPI_STUD_PHASES.settled, MISSISSIPPI_STUD_PHASES.folded].includes(studState.tablePhase)) {
     return { success: false, reason: "round_already_active" };
   }
-  removeCash(safeAnte);
-  addCasinoWager(safeAnte, "mississippi_stud");
+  withdrawCasinoWager(wagerCurrency, safeAnte);
+  addCasinoWager(safeAnte, "mississippi_stud", wagerCurrency);
   syncFavoriteCasinoGame("mississippi_stud");
   gameState.casino.casinoStats.totalGamesPlayed += 1;
   studState.deck = createShuffledMississippiStudDeck();
@@ -3187,6 +3606,7 @@ export function startMississippiStudHand(anteBet) {
   studState.resultText = "Street 1: choose 1x, 2x, or 3x ante.";
   studState.lastPlayedAt = Date.now();
   studState.folded = false;
+  studState.wagerCurrency = wagerCurrency;
   notifyListeners();
   return { success: true };
 }
@@ -3201,11 +3621,11 @@ export function placeMississippiStudStreetBet(multiplier) {
     return false;
   }
   const wager = Math.max(0, Number(studState.anteBet) || 0) * safeMultiplier;
-  if (gameState.cash < wager) {
+  if (!canAffordCasinoWager(studState.wagerCurrency, wager)) {
     return false;
   }
-  removeCash(wager);
-  addCasinoWager(wager, "mississippi_stud");
+  withdrawCasinoWager(studState.wagerCurrency, wager);
+  addCasinoWager(wager, "mississippi_stud", studState.wagerCurrency);
   studState.streetBets[studState.currentDecisionIndex] = wager;
   advanceMississippiStudRound(studState);
   notifyListeners();
@@ -3225,7 +3645,7 @@ export function foldMississippiStud() {
   studState.totalPayout = 0;
   studState.folded = true;
   studState.resultText = "Hand folded. All committed wagers lost.";
-  finalizeMississippiStudStats({ qualifies: false, rankId: "folded" }, totalWager, -totalWager);
+  finalizeMississippiStudStats({ qualifies: false, rankId: "folded" }, totalWager, -totalWager, studState.wagerCurrency);
   notifyListeners();
   return true;
 }
@@ -3234,7 +3654,7 @@ export function cancelMississippiStudRound(reason = "round_cancelled") {
   const studState = getCasinoMississippiStudState();
   const refund = getMississippiStudCommittedWager(studState);
   if (refund > 0 && ![MISSISSIPPI_STUD_PHASES.settled, MISSISSIPPI_STUD_PHASES.folded, MISSISSIPPI_STUD_PHASES.idle].includes(studState.tablePhase)) {
-    addCash(refund);
+    refundCasinoWager(studState.wagerCurrency, refund);
   }
   resetMississippiStudRound(studState, `Round cancelled: ${String(reason).replace(/_/g, " ")}`);
   notifyListeners();
@@ -3260,10 +3680,12 @@ function resetBaccaratRound(baccaratState, reasonText = "") {
   baccaratState.payoutAmount = 0;
   baccaratState.commissionPaid = 0;
   baccaratState.lastPlayedAt = Date.now();
+  baccaratState.wagerCurrency = "cash";
 }
 
-function finalizeBaccaratStats({ betChoice, winner, betAmount, payoutAmount, commissionPaid, natural, usedThirdCard }) {
+function finalizeBaccaratStats({ betChoice, winner, betAmount, payoutAmount, commissionPaid, natural, usedThirdCard, currencyId = "cash" }) {
   const stats = gameState.casino.baccaratStats;
+  const safeCurrency = sanitizeCasinoWagerCurrency(currencyId);
   stats.handsPlayed += 1;
   if (betChoice === BACCARAT_BET_CHOICES.player) {
     stats.playerBetsPlaced += 1;
@@ -3288,14 +3710,23 @@ function finalizeBaccaratStats({ betChoice, winner, betAmount, payoutAmount, com
 
   const net = payoutAmount - betAmount;
   if (payoutAmount > 0) {
-    stats.totalCashWon = addStable(stats.totalCashWon, Math.max(0, net));
-    gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, Math.max(0, net));
+    if (safeCurrency === "cash") {
+      stats.totalCashWon = addStable(stats.totalCashWon, Math.max(0, net));
+      gameState.casino.casinoStats.totalCasinoCashWon = addStable(gameState.casino.casinoStats.totalCasinoCashWon, Math.max(0, net));
+    }
+    addCurrencyBucketValue(stats, "wonByCurrency", safeCurrency, Math.max(0, net));
+    addCurrencyBucketValue(gameState.casino.casinoStats, "totalCasinoWonByCurrency", safeCurrency, Math.max(0, net));
     stats.largestSingleWin = Math.max(stats.largestSingleWin, Math.max(0, net));
   }
   if (net < 0) {
-    stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(net));
+    if (safeCurrency === "cash") {
+      stats.totalCashLost = addStable(stats.totalCashLost, Math.abs(net));
+    }
+    addCurrencyBucketValue(stats, "lostByCurrency", safeCurrency, Math.abs(net));
   }
-  stats.totalCommissionPaid = addStable(stats.totalCommissionPaid, commissionPaid);
+  if (safeCurrency === "cash") {
+    stats.totalCommissionPaid = addStable(stats.totalCommissionPaid, commissionPaid);
+  }
 
   if (betChoice === winner) {
     stats.handsWon += 1;
@@ -3341,8 +3772,12 @@ function resolveBaccaratPayout(betChoice, winner, betAmount) {
 
 export function getBaccaratStatus() {
   const baccaratState = getCasinoBaccaratState();
+  const selectedWagerCurrency = getSelectedCasinoWagerCurrency();
   const playerTotal = baccaratState.playerCards.length ? getBaccaratHandTotal(baccaratState.playerCards) : null;
   const bankerTotal = baccaratState.bankerCards.length ? getBaccaratHandTotal(baccaratState.bankerCards) : null;
+  const activeCurrency = sanitizeCasinoWagerCurrency(
+    baccaratState.tablePhase === BACCARAT_PHASES.idle ? selectedWagerCurrency : baccaratState.wagerCurrency
+  );
   return {
     unlocked: Boolean(gameState.casino.unlocked),
     activeGameId: gameState.casino.activeGameId,
@@ -3351,6 +3786,9 @@ export function getBaccaratStatus() {
     bankerCards: baccaratState.bankerCards.map((card) => ({ ...card, faceUp: true })),
     betChoice: baccaratState.betChoice,
     betAmount: baccaratState.betAmount,
+    wagerCurrency: activeCurrency,
+    selectedWagerCurrency,
+    maxWager: getCasinoMaxWagerForCurrency(selectedWagerCurrency),
     result: baccaratState.result,
     resultText: baccaratState.resultText,
     payoutAmount: baccaratState.payoutAmount,
@@ -3359,6 +3797,7 @@ export function getBaccaratStatus() {
     playerTotal,
     bankerTotal,
     canBet: Boolean(gameState.casino.unlocked),
+    availableBalance: getCasinoWagerBalance(activeCurrency),
     stats: { ...gameState.casino.baccaratStats },
     payouts: { ...BACCARAT_PAYOUTS },
   };
@@ -3373,12 +3812,13 @@ export function startBaccaratRound({ betChoice, betAmount }) {
     return { success: false, reason: "invalid_choice" };
   }
   const safeBet = Math.max(0, Math.floor(Number(betAmount) || 0));
-  if (safeBet <= 0 || safeBet > gameState.cash) {
+  const wagerCurrency = getSelectedCasinoWagerCurrency();
+  if (!canAffordCasinoWager(wagerCurrency, safeBet)) {
     return { success: false, reason: "invalid_bet" };
   }
   const baccaratState = getCasinoBaccaratState();
-  removeCash(safeBet);
-  addCasinoWager(safeBet, "baccarat");
+  withdrawCasinoWager(wagerCurrency, safeBet);
+  addCasinoWager(safeBet, "baccarat", wagerCurrency);
   syncFavoriteCasinoGame("baccarat");
   gameState.casino.casinoStats.totalGamesPlayed += 1;
 
@@ -3387,6 +3827,7 @@ export function startBaccaratRound({ betChoice, betAmount }) {
   baccaratState.bankerCards = [drawBaccaratCard(baccaratState), drawBaccaratCard(baccaratState)];
   baccaratState.betChoice = betChoice;
   baccaratState.betAmount = safeBet;
+  baccaratState.wagerCurrency = wagerCurrency;
   baccaratState.result = "";
   baccaratState.payoutAmount = 0;
   baccaratState.commissionPaid = 0;
@@ -3410,7 +3851,7 @@ export function startBaccaratRound({ betChoice, betAmount }) {
   const resolution = resolveBaccaratWinner(baccaratState.playerCards, baccaratState.bankerCards);
   const payout = resolveBaccaratPayout(betChoice, resolution.winner, safeBet);
   if (payout.payoutAmount > 0) {
-    addCash(payout.payoutAmount);
+    payoutCasinoWager(wagerCurrency, payout.payoutAmount);
   }
   baccaratState.result = resolution.winner;
   baccaratState.resultText = payout.resultText;
@@ -3425,6 +3866,7 @@ export function startBaccaratRound({ betChoice, betAmount }) {
     commissionPaid: payout.commissionPaid,
     natural,
     usedThirdCard,
+    currencyId: wagerCurrency,
   });
   notifyListeners();
   return { success: true };
@@ -3433,7 +3875,7 @@ export function startBaccaratRound({ betChoice, betAmount }) {
 export function cancelBaccaratRound(reason = "round_cancelled") {
   const baccaratState = getCasinoBaccaratState();
   if (baccaratState.betAmount > 0 && baccaratState.tablePhase !== BACCARAT_PHASES.settled) {
-    addCash(baccaratState.betAmount);
+    refundCasinoWager(baccaratState.wagerCurrency, baccaratState.betAmount);
   }
   resetBaccaratRound(baccaratState, `Round cancelled: ${String(reason).replace(/_/g, " ")}`);
   notifyListeners();
@@ -3506,6 +3948,8 @@ function performAutoExportOffline(elapsedSeconds) {
       removeBananas(shipmentAmount);
       addCash(revenue);
       gameState.totalShipments += shipmentAmount;
+      addLifetimeStat("totalShipments", shipmentAmount);
+      refreshAccountProgression();
       changeBuyerReputation(buyer.id, 0.9);
       const currentShipped = gameState.lifetimeBuyerShipmentTotals[buyer.id] || 0;
       gameState.lifetimeBuyerShipmentTotals[buyer.id] = addStable(currentShipped, shipmentAmount);
@@ -3561,6 +4005,8 @@ function tryShipToBuyerInternal(buyer, amount, options = {}) {
   removeBananas(shipmentAmount);
   addCash(revenue);
   gameState.totalShipments += shipmentAmount;
+  addLifetimeStat("totalShipments", shipmentAmount);
+  refreshAccountProgression();
   changeBuyerReputation(buyer.id, 0.9);
   const currentShipped = gameState.lifetimeBuyerShipmentTotals[buyer.id] || 0;
   gameState.lifetimeBuyerShipmentTotals[buyer.id] = addStable(currentShipped, shipmentAmount);
@@ -3637,6 +4083,13 @@ function processWeirdScienceConverters(elapsedSeconds) {
     return;
   }
 
+  const upgradeModifiers = getPurchasedUpgradeModifiers();
+  const outputMultipliersByConverter = {
+    quantum_reactor: Math.max(0, Number(upgradeModifiers.reactorOutputMultiplier) || 1),
+    collider: Math.max(0, Number(upgradeModifiers.colliderOutputMultiplier) || 1),
+    containment: Math.max(0, Number(upgradeModifiers.containmentOutputMultiplier) || 1),
+  };
+
   Object.values(WEIRD_SCIENCE_CONVERTERS).forEach((converter) => {
     const level = getConverterLevel(converter.id);
     if (level <= 0 || !isRequirementMet(converter.unlockRequirement)) {
@@ -3653,7 +4106,10 @@ function processWeirdScienceConverters(elapsedSeconds) {
       return;
     }
 
-    const outputGain = (usedInput / converter.inputPerSecond) * converter.outputPerSecond;
+    const outputGain =
+      (usedInput / converter.inputPerSecond) *
+      converter.outputPerSecond *
+      (outputMultipliersByConverter[converter.id] || 1);
     addWeirdScienceResourceValue(converter.outputResource, outputGain);
   });
 }
@@ -3675,12 +4131,20 @@ export function getProductionBreakdown() {
   };
 }
 
+export function getAccountProgressionStatus() {
+  return {
+    ...refreshAccountProgression({ skipRecompute: true }),
+    contributionEntries: [...(gameState.accountProgression?.contributionEntries || [])],
+  };
+}
+
 export function getStatBreakdown() {
   const treeSnapshot = treeHarvestSystem.getSnapshot();
   const prestige = getPrestigeBonuses();
   const pip = getPipModifiers();
   const achievements = getAchievementMultipliers();
   const researchRows = getResearchCompletionMultipliers();
+  const account = getAccountRewardModifiers();
   const orchardPickRate = getOrchardPickRatePerSecond();
   const challengeContext = resolveChallengeContext();
   const challenge = challengeContext.resolved;
@@ -3707,7 +4171,9 @@ export function getStatBreakdown() {
       achievementProduction: stabilizeNumber(achievements.productionMultiplier),
       researchRowProduction: stabilizeNumber(researchRows.productionMultiplier),
       evolutionProduction: stabilizeNumber(gameState.evolutionProductionMultiplier),
-      ceoGlobal: stabilizeNumber(getCeoGlobalMultiplier()),
+      accountProduction: stabilizeNumber(account.productionMultiplier),
+      accountExportPrice: stabilizeNumber(account.exportPriceMultiplier),
+      accountClick: stabilizeNumber(account.clickMultiplier),
       challengeProduction: stabilizeNumber(challenge.productionMultiplier),
       challengeClick: stabilizeNumber(challenge.clickMultiplier),
       challengeExportPrice: stabilizeNumber(challenge.exportPriceMultiplier),
@@ -3791,6 +4257,7 @@ export function clickTreeBanana(bananaId, context = {}) {
     return null;
   }
   gameState.totalClicks += 1;
+  addLifetimeStat("totalClicks", 1);
   gameState.tree = treeHarvestSystem.serialize();
   notifyListeners();
   return result;
@@ -4044,6 +4511,7 @@ export function purchasePipUpgrade(upgradeId) {
     [upgrade.id]: rank + 1,
   };
   gameState.pipSpentTotal = clampNonNegative(Math.floor(Number(gameState.pipSpentTotal) || 0) + nextCost);
+  addLifetimeStat("pipSpent", nextCost);
   recomputeDerivedStats();
   notifyListeners();
   return true;
@@ -4167,6 +4635,8 @@ export function buyWeirdScienceConverter(converterId) {
 
   removeCash(cost);
   gameState[converter.stateKey] = getConverterLevel(converterId) + 1;
+  addLifetimeStat("weirdScienceStructuresBuilt", 1);
+  refreshAccountProgression();
   notifyListeners();
   return true;
 }
@@ -4179,9 +4649,15 @@ export function getWeirdScienceStatus() {
   };
 
   const converters = Object.values(WEIRD_SCIENCE_CONVERTERS).map((converter) => {
+    const upgradeModifiers = getPurchasedUpgradeModifiers();
     const level = getConverterLevel(converter.id);
     const unlocked = isRequirementMet(converter.unlockRequirement);
     const cost = getWeirdScienceConverterCost(converter.id);
+    const outputMultiplier = converter.id === "quantum_reactor"
+      ? Math.max(0, Number(upgradeModifiers.reactorOutputMultiplier) || 1)
+      : converter.id === "collider"
+        ? Math.max(0, Number(upgradeModifiers.colliderOutputMultiplier) || 1)
+        : Math.max(0, Number(upgradeModifiers.containmentOutputMultiplier) || 1);
     return {
       id: converter.id,
       name: converter.name,
@@ -4191,7 +4667,7 @@ export function getWeirdScienceStatus() {
       inputResource: converter.inputResource,
       outputResource: converter.outputResource,
       inputPerSecond: stabilizeNumber(converter.inputPerSecond * level),
-      outputPerSecond: stabilizeNumber(converter.outputPerSecond * level),
+      outputPerSecond: stabilizeNumber(converter.outputPerSecond * level * outputMultiplier),
     };
   });
 
@@ -4284,6 +4760,7 @@ export function purchaseUpgrade(upgradeId) {
   removeCash(cost.cash);
   gameState.researchPoints = clampNonNegative(stabilizeNumber(gameState.researchPoints - cost.researchPoints));
   gameState.purchasedUpgradeIds = [...gameState.purchasedUpgradeIds, upgradeId];
+  addLifetimeStat("researchPurchased", 1);
   recomputeDerivedStats();
   notifyListeners();
   return true;
@@ -4326,6 +4803,8 @@ export function applyLoadedState(loadedState = {}) {
   gameState.pipSpentTotal = clampNonNegative(Math.floor(Number(gameState.pipSpentTotal) || 0));
   gameState.pipRespecCount = clampNonNegative(Math.floor(Number(gameState.pipRespecCount) || 0));
   gameState.prestigeCount = clampNonNegative(Math.floor(Number(gameState.prestigeCount) || 0));
+  gameState.lifetimeStats = sanitizeLifetimeStats(gameState.lifetimeStats);
+  gameState.accountProgression = getDefaultAccountProgression();
   gameState.challengeHistory = sanitizeChallengeHistory(gameState.challengeHistory);
   gameState.challengeRewardsUnlocked = sanitizeChallengeRewardsUnlocked(gameState.challengeRewardsUnlocked);
   gameState.activeChallengeRun = sanitizeActiveChallengeRun(gameState.activeChallengeRun);
@@ -4376,6 +4855,8 @@ export function applyLoadedState(loadedState = {}) {
   gameState.rareItems = Array.isArray(gameState.rareItems) ? gameState.rareItems.filter((item) => typeof item === "string") : [];
   gameState.buyerCooldowns = sanitizeBuyerCooldowns(gameState.buyerCooldowns);
   gameState.casino.unlocked = Boolean(getPipModifiers().casinoUnlocked);
+  setLifetimeStatNumber("highestTreeTierReached", Math.max(getLifetimeStatNumber("highestTreeTierReached"), clampNonNegative(Number(gameState.treeTierIndex) || 0)));
+  refreshAccountProgression({ skipRecompute: true });
 
   gameState.lastTickTime = Date.now();
   gameState.lastSaveTimestamp = Number(gameState.lastSaveTimestamp) || Date.now();
@@ -4625,6 +5106,7 @@ export function getAutoSellPricePerBanana() {
 
 export function pickBananaClick() {
   gameState.totalClicks += 1;
+  addLifetimeStat("totalClicks", 1);
   addBananas(gameState.clickYield);
   notifyListeners();
 }
@@ -4762,6 +5244,8 @@ export function unlockNextTreeTier() {
 
   removeCash(unlockCost);
   gameState.treeTierIndex = nextTierIndex;
+  setLifetimeStatNumber("highestTreeTierReached", Math.max(getLifetimeStatNumber("highestTreeTierReached"), nextTierIndex));
+  refreshAccountProgression();
   applyEvolutionReward(nextTier.reward);
   recomputeDerivedStats();
   notifyListeners();
@@ -4881,6 +5365,9 @@ export function prestigeReset() {
   cancelCasinoRound("prestige_reset");
   gameState.pip += pipGain;
   gameState.prestigeCount += 1;
+  addLifetimeStat("pipEarned", pipGain);
+  addLifetimeStat("prestigeCount", 1);
+  refreshAccountProgression();
 
   gameState.bananas = 0;
   gameState.tree = getDefaultTreeState();

@@ -1,11 +1,32 @@
 const SETTINGS_KEY = "jungleGameUiSettings";
-const UI_SETTINGS_SCHEMA_VERSION = 5;
+const UI_SETTINGS_SCHEMA_VERSION = 6;
 const DISPLAY_NAME_MIN_LENGTH = 3;
 const DISPLAY_NAME_MAX_LENGTH = 16;
 const DISPLAY_NAME_CHANGE_COOLDOWN_MS = 60 * 1000;
 const DEFAULT_DISPLAY_NAME = "Banana CEO";
 const DEFAULT_LEADERBOARD_API_BASE_URL = "https://jungle-game.onrender.com";
 const BUYER_TIER_ORDER = Object.freeze(["Local", "Corporate", "Global", "Interstellar", "Cosmic"]);
+export const TOP_BAR_THEME_OPTIONS = Object.freeze([
+  { id: "forest", label: "Forest", minAccountLevel: 1 },
+  { id: "slate", label: "Slate", minAccountLevel: 10 },
+  { id: "sunset", label: "Sunset", minAccountLevel: 20 },
+  { id: "quantum", label: "Quantum", minAccountLevel: 30 },
+  { id: "amber", label: "Cosmic Amber", minAccountLevel: 40 },
+]);
+export const BODY_THEME_OPTIONS = Object.freeze([
+  { id: "meadow", label: "Meadow", minAccountLevel: 1 },
+  { id: "dusk", label: "Dusk", minAccountLevel: 10 },
+  { id: "sand", label: "Sand", minAccountLevel: 20 },
+  { id: "lab", label: "Research Lab", minAccountLevel: 30 },
+  { id: "exotic", label: "Exotic Field", minAccountLevel: 40 },
+]);
+export const ICON_STYLE_OPTIONS = Object.freeze([
+  { id: "classic", label: "Classic", minAccountLevel: 1 },
+  { id: "gold", label: "Golden Badge", minAccountLevel: 10 },
+  { id: "research", label: "Research Crest", minAccountLevel: 20 },
+  { id: "antimatter", label: "Antimatter Sigil", minAccountLevel: 30 },
+  { id: "highroller", label: "High Roller Emblem", minAccountLevel: 40 },
+]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   schemaVersion: UI_SETTINGS_SCHEMA_VERSION,
@@ -85,9 +106,9 @@ function sanitizeSettings(raw, options = {}) {
   next.autosaveEnabled = Boolean(next.autosaveEnabled);
   next.numberFormat = next.numberFormat === "scientific" ? "scientific" : "short";
   next.graphicsMode = next.graphicsMode === "legacy" ? "legacy" : "modern";
-  next.topBarTheme = ["forest", "slate", "sunset"].includes(next.topBarTheme) ? next.topBarTheme : "forest";
-  next.bodyTheme = ["meadow", "dusk", "sand"].includes(next.bodyTheme) ? next.bodyTheme : "meadow";
-  next.iconStyle = next.iconStyle === "classic" ? "classic" : "classic";
+  next.topBarTheme = TOP_BAR_THEME_OPTIONS.some((option) => option.id === next.topBarTheme) ? next.topBarTheme : "forest";
+  next.bodyTheme = BODY_THEME_OPTIONS.some((option) => option.id === next.bodyTheme) ? next.bodyTheme : "meadow";
+  next.iconStyle = ICON_STYLE_OPTIONS.some((option) => option.id === next.iconStyle) ? next.iconStyle : "classic";
   next.soundEnabled = Boolean(next.soundEnabled);
   next.treeDebugEnabled = Boolean(next.treeDebugEnabled);
   const slotId = Number(next.activeSaveSlot);
@@ -101,7 +122,7 @@ function sanitizeSettings(raw, options = {}) {
   next.avatarEmoji = sanitizeAvatarEmoji(next.avatarEmoji);
   next.lastDisplayNameChangeAt = Number(next.lastDisplayNameChangeAt) > 0 ? Number(next.lastDisplayNameChangeAt) : 0;
   const legacyUpgradesViewOpen = Boolean(next.upgradesViewOpen);
-  next.activeTopView = ["main", "upgrades", "casino"].includes(next.activeTopView)
+  next.activeTopView = ["main", "upgrades", "research", "casino"].includes(next.activeTopView)
     ? next.activeTopView
     : (legacyUpgradesViewOpen ? "upgrades" : "main");
   delete next.upgradesViewOpen;

@@ -3,28 +3,24 @@ All notable changes to this project are documented in this file.
 
 The format is based on Keep a Changelog and this project uses semantic versioning.
 
-## [1.3.1] - 2026-03-13
+## [1.3.2] - 2026-03-14
 ### Added
-- Added `Mississippi Stud` as a second casino game with persistent state, stats, paytable display, and full renderer integration.
-- Added `Baccarat` as a third casino game with Player / Banker / Tie bets, banker commission handling, persistent state, and tracked baccarat statistics.
-- Added separate casino PIP unlocks:
-  - `Riverboat License` for `Mississippi Stud` (`20 PIP`)
-  - `High Roller License` for `Baccarat` (`20 PIP`)
-- Added a dedicated stable casino card DOM renderer for keyed card-slot updates instead of repeated casino card-strip HTML replacement.
+- Added a permanent account progression system that does not reset on prestige.
+- Added lifetime stat tracking for long-term progress metrics including bananas, cash, clicks, shipments, contracts, PIP, research, achievements, antimatter, Weird Science structure builds, and highest tree tier reached.
+- Added account titles, profile stars, XP progress, and next reward preview to the account sidebar.
+- Added an `Account XP Breakdown` panel showing how each tracked metric contributes to account XP.
+- Added account-level-gated cosmetic unlocks for top bar themes, body themes, and icon styles.
 
 ### Changed
-- Reworked casino card rendering to use stable mounted card slots with reveal-state updates instead of rebuilding visible card subsets.
-- Reworked first-pass casino suspense animations to use renderer-local reveal state and stable DOM transitions.
-- Updated casino navigation so each game is gated independently while still sharing the same casino shell.
-- Updated blackjack, Mississippi Stud, and Baccarat card presentation to use shared stable card-slot behavior.
+- Replaced the old banana-only CEO level display with a permanent account level system based on weighted multi-metric lifetime progress.
+- Account milestone rewards now provide small permanent bonuses every 5 levels, rotating between production, export price, and click yield.
+- Customize modal options are now data-driven and visibly locked until the required account level is reached.
+- Sidebar player stats now focus on lifetime progression totals instead of only current-run totals.
 
 ### Fixed
-- Fixed repeated looping and jittering casino card animations caused by repeated card-strip remounts.
-- Fixed cards disappearing during blackjack, Mississippi Stud, and Baccarat reveals by syncing reveal counts back to full real hand state after the animation window closes.
-- Fixed casino animation behavior so cards no longer constantly reanimate during normal render updates.
-- Removed the stray `BACK` fallback text artifact from the casino card renderer.
-- Fixed Baccarat and Mississippi Stud game buttons so they remain disabled and hidden correctly until their PIP unlocks are purchased.
+- Fixed progression so prestige resets no longer erase level growth.
+- Fixed customization flow so newly unlocked cosmetic options become selectable as soon as the required account level is reached.
 
 ### Notes
-- Save schema was extended again to support Baccarat state and stats.
-- Casino animations are now renderer-local only and are not persisted across reloads.
+- Save schema was bumped to `15`.
+- Older saves now seed permanent account progression from existing historical progress where possible.

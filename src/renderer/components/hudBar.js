@@ -38,7 +38,7 @@ export function renderHudBar() {
         <p id="inspectorWorkerText">Worker output: 0.00/s</p>
         <p id="inspectorOrchardText">Orchard picks: 0.00/s</p>
         <p id="inspectorPricesText">Market/AutoSell: $0.00 / $0.00</p>
-        <p id="inspectorSourcesText">Sources: Prestige 1.00x | PIP 1.00x | Achievements 1.00x | Research rows 1.00x | Evolution 1.00x | CEO 1.00x</p>
+        <p id="inspectorSourcesText">Sources: Prestige 1.00x | PIP 1.00x | Achievements 1.00x | Research rows 1.00x | Evolution 1.00x | Account 1.00x</p>
       </div>
     </header>
   `;

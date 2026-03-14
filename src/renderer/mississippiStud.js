@@ -81,6 +81,7 @@ export function getDefaultMississippiStudState() {
     resultText: "",
     lastPlayedAt: 0,
     folded: false,
+    wagerCurrency: "cash",
   };
 }
 
@@ -96,6 +97,9 @@ export function getDefaultMississippiStudStats() {
     largestPayout: 0,
     bestWinStreak: 0,
     currentWinStreak: 0,
+    wageredByCurrency: { cash: 0, bananas: 0, pip: 0 },
+    wonByCurrency: { cash: 0, bananas: 0, pip: 0 },
+    lostByCurrency: { cash: 0, bananas: 0, pip: 0 },
     royalFlushes: 0,
     straightFlushes: 0,
     fourKind: 0,
@@ -138,6 +142,7 @@ export function sanitizeMississippiStudState(rawState) {
     resultText: String(rawState?.resultText || ""),
     lastPlayedAt: Math.max(0, Number(rawState?.lastPlayedAt) || 0),
     folded: Boolean(rawState?.folded),
+    wagerCurrency: ["cash", "bananas", "pip"].includes(rawState?.wagerCurrency) ? rawState.wagerCurrency : defaults.wagerCurrency,
   };
 }
 
@@ -145,6 +150,14 @@ export function sanitizeMississippiStudStats(rawStats) {
   const defaults = getDefaultMississippiStudStats();
   const next = { ...defaults, ...(rawStats || {}) };
   Object.keys(defaults).forEach((key) => {
+    if (typeof defaults[key] === "object" && defaults[key] !== null) {
+      next[key] = {
+        cash: Math.max(0, Number(next[key]?.cash) || 0),
+        bananas: Math.max(0, Number(next[key]?.bananas) || 0),
+        pip: Math.max(0, Number(next[key]?.pip) || 0),
+      };
+      return;
+    }
     next[key] = Math.max(0, Number(next[key]) || 0);
   });
   return next;

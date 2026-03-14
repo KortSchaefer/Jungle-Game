@@ -73,6 +73,7 @@ export function getDefaultBaccaratState() {
     payoutAmount: 0,
     commissionPaid: 0,
     lastPlayedAt: 0,
+    wagerCurrency: "cash",
   };
 }
 
@@ -98,6 +99,9 @@ export function getDefaultBaccaratStats() {
     largestSingleWin: 0,
     bestWinStreak: 0,
     currentWinStreak: 0,
+    wageredByCurrency: { cash: 0, bananas: 0, pip: 0 },
+    wonByCurrency: { cash: 0, bananas: 0, pip: 0 },
+    lostByCurrency: { cash: 0, bananas: 0, pip: 0 },
   };
 }
 
@@ -126,6 +130,7 @@ export function sanitizeBaccaratState(rawState) {
     payoutAmount: Math.max(0, Number(rawState?.payoutAmount) || 0),
     commissionPaid: Math.max(0, Number(rawState?.commissionPaid) || 0),
     lastPlayedAt: Math.max(0, Number(rawState?.lastPlayedAt) || 0),
+    wagerCurrency: ["cash", "bananas", "pip"].includes(rawState?.wagerCurrency) ? rawState.wagerCurrency : defaults.wagerCurrency,
   };
 }
 
@@ -133,6 +138,14 @@ export function sanitizeBaccaratStats(rawStats) {
   const defaults = getDefaultBaccaratStats();
   const next = { ...defaults, ...(rawStats || {}) };
   Object.keys(defaults).forEach((key) => {
+    if (typeof defaults[key] === "object" && defaults[key] !== null) {
+      next[key] = {
+        cash: Math.max(0, Number(next[key]?.cash) || 0),
+        bananas: Math.max(0, Number(next[key]?.bananas) || 0),
+        pip: Math.max(0, Number(next[key]?.pip) || 0),
+      };
+      return;
+    }
     next[key] = Math.max(0, Number(next[key]) || 0);
   });
   return next;

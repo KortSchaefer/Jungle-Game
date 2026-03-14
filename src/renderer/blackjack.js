@@ -1,3 +1,16 @@
+import {
+  getDefaultMississippiStudState,
+  getDefaultMississippiStudStats,
+  sanitizeMississippiStudState,
+  sanitizeMississippiStudStats,
+} from "./mississippiStud.js";
+import {
+  getDefaultBaccaratState,
+  getDefaultBaccaratStats,
+  sanitizeBaccaratState,
+  sanitizeBaccaratStats,
+} from "./baccarat.js";
+
 const SUITS = Object.freeze([
   { id: "spades", symbol: "S" },
   { id: "hearts", symbol: "H" },
@@ -92,6 +105,9 @@ export function getDefaultBlackjackStats() {
     largestSingleWin: 0,
     bestWinStreak: 0,
     currentWinStreak: 0,
+    wageredByCurrency: { cash: 0, bananas: 0, pip: 0 },
+    wonByCurrency: { cash: 0, bananas: 0, pip: 0 },
+    lostByCurrency: { cash: 0, bananas: 0, pip: 0 },
   };
 }
 
@@ -101,6 +117,8 @@ export function getDefaultCasinoStats() {
     totalCasinoCashWagered: 0,
     totalCasinoCashWon: 0,
     favoriteGameId: "blackjack",
+    totalCasinoWageredByCurrency: { cash: 0, bananas: 0, pip: 0 },
+    totalCasinoWonByCurrency: { cash: 0, bananas: 0, pip: 0 },
   };
 }
 
@@ -118,6 +136,7 @@ export function getDefaultBlackjackState() {
     canSurrender: false,
     handResultSummary: "",
     lastPlayedAt: 0,
+    wagerCurrency: "cash",
   };
 }
 
@@ -125,6 +144,7 @@ export function getDefaultCasinoState() {
   return {
     unlocked: false,
     activeGameId: "blackjack",
+    selectedWagerCurrency: "cash",
     blackjack: getDefaultBlackjackState(),
     mississippiStud: getDefaultMississippiStudState(),
     baccarat: getDefaultBaccaratState(),
@@ -219,6 +239,46 @@ export function getCasinoCardAsset(card, theme = "default") {
   };
 }
 
+function sanitizeCasinoWagerCurrency(rawCurrency) {
+  return ["cash", "bananas", "pip"].includes(rawCurrency) ? rawCurrency : "cash";
+}
+
+export function sanitizeBlackjackState(rawState) {
+  const defaults = getDefaultBlackjackState();
+  const playerHands = Array.isArray(rawState?.playerHands) ? rawState.playerHands.map((hand) => sanitizeBlackjackHand(hand)) : [];
+  return {
+    tablePhase: Object.values(BLACKJACK_PHASES).includes(rawState?.tablePhase) ? rawState.tablePhase : defaults.tablePhase,
+    deck: Array.isArray(rawState?.deck) ? rawState.deck.map((card) => cloneBlackjackCard(card)) : [],
+    dealerCards: Array.isArray(rawState?.dealerCards) ? rawState.dealerCards.map((card) => cloneBlackjackCard(card)) : [],
+    dealerHoleCardRevealed: Boolean(rawState?.dealerHoleCardRevealed),
+    playerHands,
+    activeHandIndex: Math.max(0, Math.min(playerHands.length > 0 ? playerHands.length - 1 : 0, Math.floor(Number(rawState?.activeHandIndex) || 0))),
+    mainBet: Math.max(0, Number(rawState?.mainBet) || 0),
+    insuranceBet: Math.max(0, Number(rawState?.insuranceBet) || 0),
+    offeredInsurance: Boolean(rawState?.offeredInsurance),
+    canSurrender: Boolean(rawState?.canSurrender),
+    handResultSummary: String(rawState?.handResultSummary || ""),
+    lastPlayedAt: Math.max(0, Number(rawState?.lastPlayedAt) || 0),
+    wagerCurrency: sanitizeCasinoWagerCurrency(rawState?.wagerCurrency),
+  };
+}
+
+export function sanitizeCasinoState(rawState) {
+  const defaults = getDefaultCasinoState();
+  return {
+    unlocked: Boolean(rawState?.unlocked),
+    activeGameId: ["blackjack", "mississippi_stud", "baccarat"].includes(rawState?.activeGameId) ? rawState.activeGameId : defaults.activeGameId,
+    selectedWagerCurrency: sanitizeCasinoWagerCurrency(rawState?.selectedWagerCurrency),
+    blackjack: sanitizeBlackjackState(rawState?.blackjack),
+    mississippiStud: sanitizeMississippiStudState(rawState?.mississippiStud),
+    baccarat: sanitizeBaccaratState(rawState?.baccarat),
+    casinoStats: sanitizeCasinoStats(rawState?.casinoStats),
+    blackjackStats: sanitizeBlackjackStats(rawState?.blackjackStats),
+    mississippiStudStats: sanitizeMississippiStudStats(rawState?.mississippiStudStats),
+    baccaratStats: sanitizeBaccaratStats(rawState?.baccaratStats),
+  };
+}
+
 export function sanitizeBlackjackCard(rawCard) {
   return cloneBlackjackCard(rawCard, {
     faceUp: rawCard?.faceUp !== false,
@@ -249,6 +309,14 @@ export function sanitizeBlackjackStats(rawStats) {
   const defaults = getDefaultBlackjackStats();
   const next = { ...defaults, ...(rawStats || {}) };
   Object.keys(defaults).forEach((key) => {
+    if (typeof defaults[key] === "object" && defaults[key] !== null) {
+      next[key] = {
+        cash: Math.max(0, Number(next[key]?.cash) || 0),
+        bananas: Math.max(0, Number(next[key]?.bananas) || 0),
+        pip: Math.max(0, Number(next[key]?.pip) || 0),
+      };
+      return;
+    }
     next[key] = Math.max(0, Number(next[key]) || 0);
   });
   return next;
@@ -261,50 +329,15 @@ export function sanitizeCasinoStats(rawStats) {
     totalCasinoCashWagered: Math.max(0, Number(rawStats?.totalCasinoCashWagered) || defaults.totalCasinoCashWagered),
     totalCasinoCashWon: Math.max(0, Number(rawStats?.totalCasinoCashWon) || defaults.totalCasinoCashWon),
     favoriteGameId: String(rawStats?.favoriteGameId || defaults.favoriteGameId),
+    totalCasinoWageredByCurrency: {
+      cash: Math.max(0, Number(rawStats?.totalCasinoWageredByCurrency?.cash) || 0),
+      bananas: Math.max(0, Number(rawStats?.totalCasinoWageredByCurrency?.bananas) || 0),
+      pip: Math.max(0, Number(rawStats?.totalCasinoWageredByCurrency?.pip) || 0),
+    },
+    totalCasinoWonByCurrency: {
+      cash: Math.max(0, Number(rawStats?.totalCasinoWonByCurrency?.cash) || 0),
+      bananas: Math.max(0, Number(rawStats?.totalCasinoWonByCurrency?.bananas) || 0),
+      pip: Math.max(0, Number(rawStats?.totalCasinoWonByCurrency?.pip) || 0),
+    },
   };
 }
-
-export function sanitizeBlackjackState(rawState) {
-  const defaults = getDefaultBlackjackState();
-  return {
-    tablePhase: Object.values(BLACKJACK_PHASES).includes(rawState?.tablePhase) ? rawState.tablePhase : defaults.tablePhase,
-    deck: Array.isArray(rawState?.deck) ? rawState.deck.map(sanitizeBlackjackCard) : [],
-    dealerCards: Array.isArray(rawState?.dealerCards) ? rawState.dealerCards.map(sanitizeBlackjackCard) : [],
-    dealerHoleCardRevealed: Boolean(rawState?.dealerHoleCardRevealed),
-    playerHands: Array.isArray(rawState?.playerHands) ? rawState.playerHands.map(sanitizeBlackjackHand) : [],
-    activeHandIndex: Math.max(0, Math.floor(Number(rawState?.activeHandIndex) || 0)),
-    mainBet: Math.max(0, Number(rawState?.mainBet) || 0),
-    insuranceBet: Math.max(0, Number(rawState?.insuranceBet) || 0),
-    offeredInsurance: Boolean(rawState?.offeredInsurance),
-    canSurrender: Boolean(rawState?.canSurrender),
-    handResultSummary: String(rawState?.handResultSummary || ""),
-    lastPlayedAt: Math.max(0, Number(rawState?.lastPlayedAt) || 0),
-  };
-}
-
-export function sanitizeCasinoState(rawState) {
-  const defaults = getDefaultCasinoState();
-  return {
-    unlocked: Boolean(rawState?.unlocked),
-    activeGameId: ["blackjack", "mississippi_stud", "baccarat"].includes(rawState?.activeGameId) ? rawState.activeGameId : defaults.activeGameId,
-    blackjack: sanitizeBlackjackState(rawState?.blackjack),
-    mississippiStud: sanitizeMississippiStudState(rawState?.mississippiStud),
-    baccarat: sanitizeBaccaratState(rawState?.baccarat),
-    casinoStats: sanitizeCasinoStats(rawState?.casinoStats),
-    blackjackStats: sanitizeBlackjackStats(rawState?.blackjackStats),
-    mississippiStudStats: sanitizeMississippiStudStats(rawState?.mississippiStudStats),
-    baccaratStats: sanitizeBaccaratStats(rawState?.baccaratStats),
-  };
-}
-import {
-  getDefaultMississippiStudState,
-  getDefaultMississippiStudStats,
-  sanitizeMississippiStudState,
-  sanitizeMississippiStudStats,
-} from "./mississippiStud.js";
-import {
-  getDefaultBaccaratState,
-  getDefaultBaccaratStats,
-  sanitizeBaccaratState,
-  sanitizeBaccaratStats,
-} from "./baccarat.js";

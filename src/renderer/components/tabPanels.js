@@ -4,6 +4,7 @@ export function renderTabPanels() {
       <nav class="top-nav" aria-label="Game sections">
         <button id="showMainViewBtn" class="ghost-btn" type="button" aria-expanded="true" aria-controls="mainView">Main</button>
         <button id="toggleUpgradesBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="upgradesView">Upgrades</button>
+        <button id="toggleResearchBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="researchView">Research</button>
         <button id="toggleCasinoBtn" class="ghost-btn" type="button" aria-expanded="false" aria-controls="casinoView">Casino</button>
       </nav>
       <section id="challengeHudStrip" class="ui-card challenge-hud-strip" aria-live="polite">
@@ -187,12 +188,6 @@ export function renderTabPanels() {
         </div>
 
         <div class="ui-card">
-          <h3>Research</h3>
-          <p id="researchPointsText">Research Points: 0</p>
-          <p id="researchRateText">RP/sec: 0</p>
-        </div>
-
-        <div class="ui-card">
           <h3>Weird Science</h3>
           <p id="bananaMatterText">Banana Matter: 0</p>
           <p id="exoticPeelParticlesText">Exotic Peel Particles: 0</p>
@@ -212,21 +207,6 @@ export function renderTabPanels() {
               <button id="buyContainmentBtn" type="button">Build Containment</button>
             </div>
           </div>
-        </div>
-
-        <div class="ui-card">
-          <h3>Research Tree</h3>
-          <div id="researchTreeGrid" class="research-tree-grid"></div>
-        </div>
-
-        <div class="ui-card">
-          <h3>Node Details</h3>
-          <p id="researchDetailName">Select a node</p>
-          <p id="researchDetailDesc">Choose a research node to see details.</p>
-          <p id="researchDetailReq">Requirements: -</p>
-          <p id="researchDetailCost">Cost: -</p>
-          <p id="researchDetailState">State: -</p>
-          <button id="researchBuyBtn" type="button">Research</button>
         </div>
 
         <div class="ui-card">
@@ -266,6 +246,59 @@ export function renderTabPanels() {
         </div>
       </section>
 
+      <section id="researchView" class="tab-panel upgrades-panel is-hidden" aria-hidden="true">
+        <div class="ui-card research-shell">
+          <div class="research-header">
+            <div>
+              <h3>Research Directorate</h3>
+              <p id="researchHeaderText">Allocate research points into long-term operational doctrine.</p>
+            </div>
+            <div class="research-header-stats">
+              <p id="researchPointsText">Research Points: 0</p>
+              <p id="researchRateText">RP/sec: 0</p>
+            </div>
+          </div>
+
+          <div class="research-layout">
+            <div class="research-board-stack">
+              <section class="research-board-card">
+                <div class="research-board-head">
+                  <h4>Core Research Tree</h4>
+                  <p>Follow prerequisite lines to unlock deeper operational branches.</p>
+                </div>
+                <div id="researchCoreBoard" class="research-board research-board--core">
+                  <svg id="researchCoreConnectorSvg" class="research-connector-svg" aria-hidden="true"></svg>
+                  <div id="researchCoreTreeGrid" class="research-tree-grid research-tree-grid--core"></div>
+                </div>
+              </section>
+
+              <section class="research-board-card research-board-card--exotic">
+                <div class="research-board-head">
+                  <h4>Antimatter Research Tree</h4>
+                  <p>Late-game exotic research powered by Weird Science and antimatter progression.</p>
+                </div>
+                <div id="researchExoticBoard" class="research-board research-board--exotic">
+                  <svg id="researchExoticConnectorSvg" class="research-connector-svg" aria-hidden="true"></svg>
+                  <div id="researchExoticTreeGrid" class="research-tree-grid research-tree-grid--exotic"></div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="research-detail-card ui-card">
+              <p id="researchDetailCategory" class="field-label">Category</p>
+              <h4 id="researchDetailName">Select a node</h4>
+              <p id="researchDetailSummary">Choose a research node to inspect its effect.</p>
+              <p id="researchDetailEffect">Effect: -</p>
+              <p id="researchDetailFlavor">-</p>
+              <p id="researchDetailReq">Requirements: -</p>
+              <p id="researchDetailCost">Cost: -</p>
+              <p id="researchDetailState">State: -</p>
+              <button id="researchBuyBtn" type="button">Research</button>
+            </aside>
+          </div>
+        </div>
+      </section>
+
       <section id="casinoView" class="tab-panel upgrades-panel is-hidden" aria-hidden="true">
         <div class="ui-card casino-shell">
           <div class="casino-header">
@@ -273,11 +306,25 @@ export function renderTabPanels() {
               <h3>Monkey Casino</h3>
               <p id="casinoIntroText">High-risk entertainment funded by banana capital.</p>
             </div>
-            <div class="casino-game-nav">
-              <button id="casinoBlackjackGameBtn" type="button">Blackjack</button>
-              <button id="casinoMississippiStudGameBtn" type="button">Mississippi Stud</button>
-              <button id="casinoBaccaratGameBtn" type="button">Baccarat</button>
-              <button type="button" disabled>More Games Soon</button>
+            <div class="casino-header-actions">
+              <div class="casino-wager-controls">
+                <label for="casinoWagerCurrencySelect">Betting Currency</label>
+                <div class="blackjack-chip-controls">
+                  <select id="casinoWagerCurrencySelect">
+                    <option value="cash">Cash</option>
+                    <option value="bananas">Bananas</option>
+                    <option value="pip">PIP</option>
+                  </select>
+                </div>
+                <p id="casinoWagerCurrencyBalanceText">Balance: $0</p>
+                <p id="casinoWagerCurrencyHintText">Cash tables are always available.</p>
+              </div>
+              <div class="casino-game-nav">
+                <button id="casinoBlackjackGameBtn" type="button">Blackjack</button>
+                <button id="casinoMississippiStudGameBtn" type="button">Mississippi Stud</button>
+                <button id="casinoBaccaratGameBtn" type="button">Baccarat</button>
+                <button type="button" disabled>More Games Soon</button>
+              </div>
             </div>
           </div>
 

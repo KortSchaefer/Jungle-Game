@@ -10,6 +10,7 @@ import {
   getActiveContracts,
   getAchievementsStatus,
   getActiveChallengeRunStatus,
+  getAccountProgressionStatus,
   getAscensionChallengesStatus,
   getAscensionRewardsStatus,
   getChallengeLastResult,
@@ -80,6 +81,7 @@ import {
   placeMississippiStudStreetBet,
   foldMississippiStud,
   setCasinoActiveGame,
+  setSelectedCasinoWagerCurrency,
   takeInsuranceBlackjack,
   shipToBuyer,
   clickTreeBanana,
@@ -95,7 +97,16 @@ import { formatGameNumber } from "./numbers.js";
 import { themedUpgradeNames } from "./researchTree.js";
 import { getTreeTextures, sanitizeGraphicsMode } from "./textureAssets.js";
 import { fetchLeaderboard, fetchLeaderboardMe, startLeaderboardSession, submitLeaderboardStats } from "./leaderboardApi.js";
-import { canChangeDisplayName, completeRegistration, loadUISettings, setUISettings, updateDisplayName } from "./settings.js";
+import {
+  BODY_THEME_OPTIONS,
+  ICON_STYLE_OPTIONS,
+  TOP_BAR_THEME_OPTIONS,
+  canChangeDisplayName,
+  completeRegistration,
+  loadUISettings,
+  setUISettings,
+  updateDisplayName,
+} from "./settings.js";
 import { exportSlotJson, getSaveSlotsSummary, importSlotJson, loadGameFromSlot, saveGameToSlot } from "./storage.js";
 import { ascensionRewardById } from "./ascensionChallenges.js";
 import { createCasinoAnimationController } from "./casinoAnimations.js";
@@ -125,6 +136,21 @@ function formatRequirement(requirement, formatAmount) {
   if (requirement.type === "antimatterBananas") {
     return `Generate antimatter bananas: ${formatAmount(requirement.value)}`;
   }
+  if (requirement.type === "bananaMatter") {
+    return `Accumulate Banana Matter: ${formatAmount(requirement.value)}`;
+  }
+  if (requirement.type === "exoticPeelParticles") {
+    return `Accumulate Exotic Peel Particles: ${formatAmount(requirement.value)}`;
+  }
+  if (requirement.type === "quantumReactorLevel") {
+    return `Quantum Reactor level: ${formatAmount(requirement.value)}`;
+  }
+  if (requirement.type === "colliderLevel") {
+    return `Collider level: ${formatAmount(requirement.value)}`;
+  }
+  if (requirement.type === "containmentLevel") {
+    return `Containment level: ${formatAmount(requirement.value)}`;
+  }
 
   return "Unknown requirement";
 }
@@ -147,18 +173,20 @@ function formatRemainingMs(ms) {
   return `${mins}m ${secs}s`;
 }
 
+function formatWager(amount, currencyId, fmt) {
+  const safeCurrency = ["cash", "bananas", "pip"].includes(currencyId) ? currencyId : "cash";
+  if (safeCurrency === "bananas") {
+    return `${fmt(amount)} Bananas`;
+  }
+  if (safeCurrency === "pip") {
+    return `${fmt(amount)} PIP`;
+  }
+  return `$${fmt(amount)}`;
+}
+
 function clampShipment(value, min, max) {
   const n = Math.floor(Number(value) || min);
   return Math.max(min, Math.min(max, n));
-}
-
-function getCeoLevelProgress(totalBananasEarned) {
-  const total = Math.max(0, Number(totalBananasEarned) || 0);
-  const level = Math.max(1, Math.floor(Math.log10(total + 1)) + 1);
-  const levelStart = level <= 1 ? 0 : 10 ** (level - 1);
-  const levelEnd = 10 ** level;
-  const progress = Math.max(0, Math.min(1, (total - levelStart) / (levelEnd - levelStart)));
-  return { level, progress };
 }
 
 const RENDER_RATE_HZ = 4;
@@ -293,6 +321,9 @@ export function mountUI(container) {
     saveIdentityBtn: container.querySelector("#saveIdentityBtn"),
     displayNameCooldownText: container.querySelector("#displayNameCooldownText"),
     ceoLevelText: container.querySelector("#ceoLevelText"),
+    accountLevelTitleText: container.querySelector("#accountLevelTitleText"),
+    accountNextRewardText: container.querySelector("#accountNextRewardText"),
+    accountXpBreakdownList: container.querySelector("#accountXpBreakdownList"),
     ceoProgressFill: container.querySelector("#ceoProgressFill"),
     ceoProgressText: container.querySelector("#ceoProgressText"),
     playerTotalBananasText: container.querySelector("#playerTotalBananasText"),
@@ -378,6 +409,7 @@ export function mountUI(container) {
     prestigeBtn: container.querySelector("#prestigeBtn"),
     researchPointsText: container.querySelector("#researchPointsText"),
     researchRateText: container.querySelector("#researchRateText"),
+    researchHeaderText: container.querySelector("#researchHeaderText"),
     bananaMatterText: container.querySelector("#bananaMatterText"),
     exoticPeelParticlesText: container.querySelector("#exoticPeelParticlesText"),
     antimatterBananasText: container.querySelector("#antimatterBananasText"),
@@ -388,9 +420,17 @@ export function mountUI(container) {
     buyQuantumReactorBtn: container.querySelector("#buyQuantumReactorBtn"),
     buyColliderBtn: container.querySelector("#buyColliderBtn"),
     buyContainmentBtn: container.querySelector("#buyContainmentBtn"),
-    researchTreeGrid: container.querySelector("#researchTreeGrid"),
+    researchCoreBoard: container.querySelector("#researchCoreBoard"),
+    researchCoreConnectorSvg: container.querySelector("#researchCoreConnectorSvg"),
+    researchCoreTreeGrid: container.querySelector("#researchCoreTreeGrid"),
+    researchExoticBoard: container.querySelector("#researchExoticBoard"),
+    researchExoticConnectorSvg: container.querySelector("#researchExoticConnectorSvg"),
+    researchExoticTreeGrid: container.querySelector("#researchExoticTreeGrid"),
+    researchDetailCategory: container.querySelector("#researchDetailCategory"),
     researchDetailName: container.querySelector("#researchDetailName"),
-    researchDetailDesc: container.querySelector("#researchDetailDesc"),
+    researchDetailSummary: container.querySelector("#researchDetailSummary"),
+    researchDetailEffect: container.querySelector("#researchDetailEffect"),
+    researchDetailFlavor: container.querySelector("#researchDetailFlavor"),
     researchDetailReq: container.querySelector("#researchDetailReq"),
     researchDetailCost: container.querySelector("#researchDetailCost"),
     researchDetailState: container.querySelector("#researchDetailState"),
@@ -405,6 +445,7 @@ export function mountUI(container) {
     settingsModal: container.querySelector("#settingsModal"),
     closeCustomizeBtn: container.querySelector("#closeCustomizeBtn"),
     customizeModal: container.querySelector("#customizeModal"),
+    customizeUnlockHintText: container.querySelector("#customizeUnlockHintText"),
     topBarThemeSelect: container.querySelector("#topBarThemeSelect"),
     bodyThemeSelect: container.querySelector("#bodyThemeSelect"),
     iconStyleSelect: container.querySelector("#iconStyleSelect"),
@@ -438,7 +479,9 @@ export function mountUI(container) {
     mainView: container.querySelector("#mainView"),
     showMainViewBtn: container.querySelector("#showMainViewBtn"),
     toggleUpgradesBtn: container.querySelector("#toggleUpgradesBtn"),
+    toggleResearchBtn: container.querySelector("#toggleResearchBtn"),
     upgradesView: container.querySelector("#upgradesView"),
+    researchView: container.querySelector("#researchView"),
     toggleCasinoBtn: container.querySelector("#toggleCasinoBtn"),
     casinoView: container.querySelector("#casinoView"),
     challengeHudStrip: container.querySelector("#challengeHudStrip"),
@@ -449,6 +492,9 @@ export function mountUI(container) {
     mississippiStudTableCard: container.querySelector("#mississippiStudTableCard"),
     baccaratTableCard: container.querySelector("#baccaratTableCard"),
     casinoIntroText: container.querySelector("#casinoIntroText"),
+    casinoWagerCurrencySelect: container.querySelector("#casinoWagerCurrencySelect"),
+    casinoWagerCurrencyBalanceText: container.querySelector("#casinoWagerCurrencyBalanceText"),
+    casinoWagerCurrencyHintText: container.querySelector("#casinoWagerCurrencyHintText"),
     casinoBlackjackGameBtn: container.querySelector("#casinoBlackjackGameBtn"),
     casinoMississippiStudGameBtn: container.querySelector("#casinoMississippiStudGameBtn"),
     casinoBaccaratGameBtn: container.querySelector("#casinoBaccaratGameBtn"),
@@ -526,13 +572,25 @@ export function mountUI(container) {
   };
   const casinoAnimations = createCasinoAnimationController(requestCasinoRender);
   const appShell = container.querySelector(".app-shell");
+  const avatarPlaceholder = container.querySelector(".avatar-placeholder");
   const applyThemeSettings = (sourceSettings = settings) => {
     const topBarTheme = String(sourceSettings.topBarTheme || "forest");
     const bodyTheme = String(sourceSettings.bodyTheme || "meadow");
+    const iconStyle = String(sourceSettings.iconStyle || "classic");
     if (appShell) {
       appShell.setAttribute("data-topbar-theme", topBarTheme);
+      appShell.setAttribute("data-icon-style", iconStyle);
     }
     document.body.setAttribute("data-body-theme", bodyTheme);
+    if (avatarPlaceholder) {
+      avatarPlaceholder.setAttribute("data-icon-style", iconStyle);
+      avatarPlaceholder.textContent =
+        iconStyle === "gold" ? "G" :
+        iconStyle === "research" ? "R" :
+        iconStyle === "antimatter" ? "A" :
+        iconStyle === "highroller" ? "H" :
+        "M";
+    }
   };
   if (appShell) {
     appShell.setAttribute("data-graphics-mode", graphicsMode);
@@ -554,15 +612,6 @@ export function mountUI(container) {
   elements.companyNameInput.value = settings.companyName;
   elements.autosaveToggle.checked = settings.autosaveEnabled;
   elements.numberFormatSelect.value = settings.numberFormat;
-  if (elements.topBarThemeSelect) {
-    elements.topBarThemeSelect.value = settings.topBarTheme || "forest";
-  }
-  if (elements.bodyThemeSelect) {
-    elements.bodyThemeSelect.value = settings.bodyTheme || "meadow";
-  }
-  if (elements.iconStyleSelect) {
-    elements.iconStyleSelect.value = settings.iconStyle || "classic";
-  }
   if (elements.graphicsModeSelect) {
     elements.graphicsModeSelect.value = graphicsMode;
   }
@@ -583,7 +632,7 @@ export function mountUI(container) {
 
   const setTopView = (viewId, persist = true) => {
     const casinoUnlocked = Boolean(getCasinoStatus().unlocked);
-    const safeView = viewId === "casino" && !casinoUnlocked ? "main" : (["main", "upgrades", "casino"].includes(viewId) ? viewId : "main");
+    const safeView = viewId === "casino" && !casinoUnlocked ? "main" : (["main", "upgrades", "research", "casino"].includes(viewId) ? viewId : "main");
     if (elements.mainView) {
       const hidden = safeView !== "main";
       elements.mainView.classList.toggle("is-hidden", hidden);
@@ -593,6 +642,11 @@ export function mountUI(container) {
       const hidden = safeView !== "upgrades";
       elements.upgradesView.classList.toggle("is-hidden", hidden);
       elements.upgradesView.setAttribute("aria-hidden", String(hidden));
+    }
+    if (elements.researchView) {
+      const hidden = safeView !== "research";
+      elements.researchView.classList.toggle("is-hidden", hidden);
+      elements.researchView.setAttribute("aria-hidden", String(hidden));
     }
     if (elements.casinoView) {
       const hidden = safeView !== "casino";
@@ -607,6 +661,11 @@ export function mountUI(container) {
       elements.toggleUpgradesBtn.classList.toggle("is-active", safeView === "upgrades");
       elements.toggleUpgradesBtn.setAttribute("aria-expanded", String(safeView === "upgrades"));
       elements.toggleUpgradesBtn.setAttribute("aria-controls", "upgradesView");
+    }
+    if (elements.toggleResearchBtn) {
+      elements.toggleResearchBtn.classList.toggle("is-active", safeView === "research");
+      elements.toggleResearchBtn.setAttribute("aria-expanded", String(safeView === "research"));
+      elements.toggleResearchBtn.setAttribute("aria-controls", "researchView");
     }
     if (elements.toggleCasinoBtn) {
       elements.toggleCasinoBtn.classList.toggle("is-active", safeView === "casino");
@@ -626,6 +685,37 @@ export function mountUI(container) {
     const trimmed = String(rawName || "").replace(/\s+/g, " ").trim();
     return trimmed.length >= 3 && trimmed.length <= 16;
   };
+
+  const renderCustomizeOptions = (accountLevel) => {
+    const safeLevel = Math.max(1, Math.floor(Number(accountLevel) || 1));
+    const syncSelect = (selectElement, options, selectedValue) => {
+      if (!selectElement) {
+        return;
+      }
+      const html = options
+        .map((option) => {
+          const unlocked = safeLevel >= option.minAccountLevel;
+          const suffix = unlocked ? "" : ` (Lv ${option.minAccountLevel})`;
+          return `<option value="${option.id}" ${unlocked ? "" : "disabled"}>${option.label}${suffix}</option>`;
+        })
+        .join("");
+      setHtmlIfChanged(selectElement, html);
+      const fallback = options.find((option) => safeLevel >= option.minAccountLevel)?.id || options[0]?.id || "";
+      setValueIfChanged(
+        selectElement,
+        options.some((option) => option.id === selectedValue && safeLevel >= option.minAccountLevel) ? selectedValue : fallback
+      );
+    };
+
+    syncSelect(elements.topBarThemeSelect, TOP_BAR_THEME_OPTIONS, settings.topBarTheme || "forest");
+    syncSelect(elements.bodyThemeSelect, BODY_THEME_OPTIONS, settings.bodyTheme || "meadow");
+    syncSelect(elements.iconStyleSelect, ICON_STYLE_OPTIONS, settings.iconStyle || "classic");
+
+    if (elements.customizeUnlockHintText) {
+      setTextIfChanged(elements.customizeUnlockHintText, `Account Level ${safeLevel} | Higher levels unlock additional themes and icon styles.`);
+    }
+  };
+  renderCustomizeOptions(1);
 
   const syncIdentityUi = (identity = settings) => {
     if (elements.playerIdText) {
@@ -751,6 +841,11 @@ export function mountUI(container) {
       setTopView("upgrades", true);
     });
   }
+  if (elements.toggleResearchBtn) {
+    elements.toggleResearchBtn.addEventListener("click", () => {
+      setTopView("research", true);
+    });
+  }
 
   if (elements.toggleCasinoBtn) {
     elements.toggleCasinoBtn.addEventListener("click", () => {
@@ -770,6 +865,11 @@ export function mountUI(container) {
   if (elements.casinoBaccaratGameBtn) {
     elements.casinoBaccaratGameBtn.addEventListener("click", () => {
       setCasinoActiveGame("baccarat");
+    });
+  }
+  if (elements.casinoWagerCurrencySelect) {
+    elements.casinoWagerCurrencySelect.addEventListener("change", () => {
+      setSelectedCasinoWagerCurrency(elements.casinoWagerCurrencySelect.value);
     });
   }
 
@@ -930,6 +1030,9 @@ export function mountUI(container) {
 
   if (elements.topBarThemeSelect) {
     elements.topBarThemeSelect.addEventListener("change", () => {
+      if (elements.topBarThemeSelect.selectedOptions[0]?.disabled) {
+        return;
+      }
       const next = setUISettings({ topBarTheme: elements.topBarThemeSelect.value });
       settings.topBarTheme = next.topBarTheme;
       applyThemeSettings(settings);
@@ -938,6 +1041,9 @@ export function mountUI(container) {
 
   if (elements.bodyThemeSelect) {
     elements.bodyThemeSelect.addEventListener("change", () => {
+      if (elements.bodyThemeSelect.selectedOptions[0]?.disabled) {
+        return;
+      }
       const next = setUISettings({ bodyTheme: elements.bodyThemeSelect.value });
       settings.bodyTheme = next.bodyTheme;
       applyThemeSettings(settings);
@@ -946,8 +1052,12 @@ export function mountUI(container) {
 
   if (elements.iconStyleSelect) {
     elements.iconStyleSelect.addEventListener("change", () => {
+      if (elements.iconStyleSelect.selectedOptions[0]?.disabled) {
+        return;
+      }
       const next = setUISettings({ iconStyle: elements.iconStyleSelect.value });
       settings.iconStyle = next.iconStyle;
+      applyThemeSettings(settings);
     });
   }
 
@@ -1229,7 +1339,7 @@ export function mountUI(container) {
   }
   if (elements.blackjackMaxBetBtn) {
     elements.blackjackMaxBetBtn.addEventListener("click", () => {
-      blackjackBetDraft = Math.max(1, Math.floor(Number(gameState.cash) || 1));
+      blackjackBetDraft = Math.max(1, Math.floor(Number(getBlackjackStatus().maxWager) || 1));
       setValueIfChanged(elements.blackjackBetInput, blackjackBetDraft);
     });
   }
@@ -1323,7 +1433,7 @@ export function mountUI(container) {
   }
   if (elements.baccaratMaxBetBtn) {
     elements.baccaratMaxBetBtn.addEventListener("click", () => {
-      baccaratBetDraft = Math.max(1, Math.floor(Number(gameState.cash) || 1));
+      baccaratBetDraft = Math.max(1, Math.floor(Number(getBaccaratStatus().maxWager) || 1));
       setValueIfChanged(elements.baccaratBetInput, baccaratBetDraft);
     });
   }
@@ -1485,22 +1595,84 @@ export function mountUI(container) {
   });
 
   const researchNodes = getResearchTreeNodes();
+  const coreResearchNodes = researchNodes.filter((node) => node.branch !== "exotic");
+  const exoticResearchNodes = researchNodes.filter((node) => node.branch === "exotic");
   let selectedResearchNodeId = researchNodes[0]?.id || null;
   const researchNodeElements = new Map();
+  const researchConnectorGroups = {
+    core: [],
+    exotic: [],
+  };
 
-  researchNodes.forEach((node) => {
-    const nodeButton = document.createElement("button");
-    nodeButton.type = "button";
-    nodeButton.className = "research-node";
-    nodeButton.style.gridColumn = String(node.col + 1);
-    nodeButton.style.gridRow = String(node.row + 1);
-    nodeButton.textContent = node.name;
-    nodeButton.addEventListener("click", () => {
-      selectedResearchNodeId = node.id;
+  const updateResearchConnectorGroup = (boardElement, svgElement, pairs) => {
+    if (!boardElement || !svgElement) {
+      return;
+    }
+    const boardRect = boardElement.getBoundingClientRect();
+    if (boardRect.width <= 0 || boardRect.height <= 0) {
+      return;
+    }
+    svgElement.setAttribute("viewBox", `0 0 ${boardRect.width} ${boardRect.height}`);
+    svgElement.setAttribute("width", String(boardRect.width));
+    svgElement.setAttribute("height", String(boardRect.height));
+    svgElement.innerHTML = pairs
+      .map(({ fromId, toId }) => {
+        const fromEl = researchNodeElements.get(fromId)?.button;
+        const toEl = researchNodeElements.get(toId)?.button;
+        if (!fromEl || !toEl || !boardElement.contains(fromEl) || !boardElement.contains(toEl)) {
+          return "";
+        }
+        const fromRect = fromEl.getBoundingClientRect();
+        const toRect = toEl.getBoundingClientRect();
+        const x1 = (fromRect.left - boardRect.left) + fromRect.width / 2;
+        const y1 = (fromRect.top - boardRect.top) + fromRect.height / 2;
+        const x2 = (toRect.left - boardRect.left) + toRect.width / 2;
+        const y2 = (toRect.top - boardRect.top) + toRect.height / 2;
+        return `<line class="research-connector-line" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"></line>`;
+      })
+      .join("");
+  };
+
+  const updateResearchConnectors = () => {
+    updateResearchConnectorGroup(elements.researchCoreBoard, elements.researchCoreConnectorSvg, researchConnectorGroups.core);
+    updateResearchConnectorGroup(elements.researchExoticBoard, elements.researchExoticConnectorSvg, researchConnectorGroups.exotic);
+  };
+
+  const buildResearchBranch = (nodes, gridElement, branchKey) => {
+    if (!gridElement || !nodes.length) {
+      return;
+    }
+    const minCol = Math.min(...nodes.map((node) => Number(node.col) || 0));
+    nodes.forEach((node) => {
+      const nodeButton = document.createElement("button");
+      nodeButton.type = "button";
+      nodeButton.className = `research-node research-node--${String(node.category || "").toLowerCase().replace(/\s+/g, "-")} ${node.branch === "exotic" ? "research-node--exotic" : "research-node--core"}`;
+      nodeButton.style.gridColumn = String(((Number(node.col) || 0) - minCol) + 1);
+      nodeButton.style.gridRow = String((Number(node.row) || 0) + 1);
+      nodeButton.innerHTML = `<span class="research-node-title">${node.name}</span><span class="research-node-cost">${node.costResearchPoints || 0} RP</span>`;
+      nodeButton.addEventListener("click", () => {
+        selectedResearchNodeId = node.id;
+      });
+      gridElement.appendChild(nodeButton);
+      researchNodeElements.set(node.id, {
+        button: nodeButton,
+        title: nodeButton.querySelector(".research-node-title"),
+        cost: nodeButton.querySelector(".research-node-cost"),
+      });
+      (Array.isArray(node.prerequisites) ? node.prerequisites : []).forEach((prereqId) => {
+        if (nodes.some((candidate) => candidate.id === prereqId)) {
+          researchConnectorGroups[branchKey].push({ fromId: prereqId, toId: node.id });
+        }
+      });
     });
-    elements.researchTreeGrid.appendChild(nodeButton);
-    researchNodeElements.set(node.id, nodeButton);
-  });
+  };
+
+  buildResearchBranch(coreResearchNodes, elements.researchCoreTreeGrid, "core");
+  buildResearchBranch(exoticResearchNodes, elements.researchExoticTreeGrid, "exotic");
+  setTimeout(updateResearchConnectors, 0);
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", updateResearchConnectors);
+  }
 
   elements.researchBuyBtn.addEventListener("click", () => {
     if (selectedResearchNodeId) {
@@ -1691,8 +1863,43 @@ export function mountUI(container) {
       setTextIfChanged(
         elements.casinoIntroText,
         casinoStatus.unlocked
-          ? "Monkey Casino is live. Blackjack uses cash only and tracks full table stats for future casino progression."
+          ? "Monkey Casino is live. Select a wager currency, then play blackjack, Stud, or baccarat."
           : "Unlock Card Shark License in the PIP Shop for 20 PIP to open the Monkey Casino."
+      );
+    }
+    if (elements.casinoWagerCurrencySelect) {
+      const optionMeta = [
+        { value: "cash", label: "Cash", enabled: true },
+        { value: "bananas", label: casinoStatus.bananaBettingUnlocked ? "Bananas" : "Bananas (20 PIP unlock)", enabled: casinoStatus.bananaBettingUnlocked },
+        { value: "pip", label: casinoStatus.pipBettingUnlocked ? "PIP" : "PIP (100 PIP unlock)", enabled: casinoStatus.pipBettingUnlocked },
+      ];
+      optionMeta.forEach((meta) => {
+        const option = elements.casinoWagerCurrencySelect.querySelector(`option[value="${meta.value}"]`);
+        if (!option) {
+          return;
+        }
+        if (option.textContent !== meta.label) {
+          option.textContent = meta.label;
+        }
+        option.disabled = !meta.enabled;
+      });
+      setDisabledIfChanged(elements.casinoWagerCurrencySelect, !casinoStatus.unlocked);
+      setValueIfChanged(elements.casinoWagerCurrencySelect, casinoStatus.selectedWagerCurrency);
+    }
+    if (elements.casinoWagerCurrencyBalanceText) {
+      setTextIfChanged(
+        elements.casinoWagerCurrencyBalanceText,
+        `Balance: ${formatWager(casinoStatus.selectedWagerBalance, casinoStatus.selectedWagerCurrency, fmt)}`
+      );
+    }
+    if (elements.casinoWagerCurrencyHintText) {
+      setTextIfChanged(
+        elements.casinoWagerCurrencyHintText,
+        casinoStatus.selectedWagerCurrency === "pip"
+          ? "PIP wagers are capped at 25 per round and use permanent prestige currency."
+          : casinoStatus.selectedWagerCurrency === "bananas"
+            ? "Banana tables settle entirely in bananas."
+            : "Cash tables are always available."
       );
     }
     if (elements.casinoBlackjackGameBtn) {
@@ -1717,7 +1924,7 @@ export function mountUI(container) {
       );
       setTextIfChanged(
         elements.blackjackStakeText,
-        `Main Bet: $${fmt(blackjackStatus.mainBet)} | Insurance: $${fmt(blackjackStatus.insuranceBet)} | Active Stake: $${fmt(blackjackStatus.outstandingStake)}`
+        `Main Bet: ${formatWager(blackjackStatus.mainBet, blackjackStatus.wagerCurrency, fmt)} | Insurance: ${formatWager(blackjackStatus.insuranceBet, blackjackStatus.wagerCurrency, fmt)} | Active Stake: ${formatWager(blackjackStatus.outstandingStake, blackjackStatus.wagerCurrency, fmt)}`
       );
       setTextIfChanged(
         elements.blackjackDealerValueText,
@@ -1731,7 +1938,7 @@ export function mountUI(container) {
       setTextIfChanged(
         elements.blackjackInsuranceText,
         blackjackStatus.canTakeInsurance || blackjackStatus.canDeclineInsurance
-          ? `Insurance offered: stake up to $${fmt(Math.floor(Math.max(0, Number(blackjackStatus.mainBet) || 0) / 2))}`
+          ? `Insurance offered: stake up to ${formatWager(Math.floor(Math.max(0, Number(blackjackStatus.mainBet) || 0) / 2), blackjackStatus.wagerCurrency, fmt)}`
           : "Insurance: Not currently offered"
       );
       syncBlackjackDealer(elements.blackjackDealerHands, visibleBlackjackStatus);
@@ -1740,7 +1947,7 @@ export function mountUI(container) {
         const clampedDraft = Math.max(1, Math.floor(Number(blackjackBetDraft) || 1));
         setValueIfChanged(elements.blackjackBetInput, clampedDraft);
       }
-      setDisabledIfChanged(elements.blackjackMaxBetBtn, Math.floor(Number(state.cash) || 0) <= 0);
+      setDisabledIfChanged(elements.blackjackMaxBetBtn, Math.floor(Number(blackjackStatus.maxWager) || 0) <= 0);
       setDisabledIfChanged(elements.blackjackDealBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canDeal);
       setDisabledIfChanged(elements.blackjackHitBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canHit);
       setDisabledIfChanged(elements.blackjackStandBtn, visibleBlackjackStatus.animationBusy || !blackjackStatus.canStand);
@@ -1763,9 +1970,9 @@ export function mountUI(container) {
           ["Blackjacks", blackjackStatus.blackjackStats.naturalBlackjacks],
           ["Splits", blackjackStatus.blackjackStats.splitHandsCreated],
           ["Doubles", blackjackStatus.blackjackStats.doubleDownHands],
-          ["Wagered", `$${fmt(blackjackStatus.blackjackStats.totalCashWagered)}`],
-          ["Won", `$${fmt(blackjackStatus.blackjackStats.totalCashWon)}`],
-          ["Largest Win", `$${fmt(blackjackStatus.blackjackStats.largestSingleWin)}`],
+          ["Wagered", formatWager(blackjackStatus.blackjackStats.totalCashWagered, "cash", fmt)],
+          ["Won", formatWager(blackjackStatus.blackjackStats.totalCashWon, "cash", fmt)],
+          ["Largest Win", formatWager(blackjackStatus.blackjackStats.largestSingleWin, "cash", fmt)],
           ["Best Streak", fmt(blackjackStatus.blackjackStats.bestWinStreak)],
           ["Casino Games", fmt(blackjackStatus.casinoStats.totalGamesPlayed)],
         ]
@@ -1780,19 +1987,19 @@ export function mountUI(container) {
         );
         setTextIfChanged(
           elements.mississippiStudStakeText,
-          `Ante: $${fmt(mississippiStudStatus.anteBet)} | Total Action: $${fmt(mississippiStudStatus.totalCommitted)}`
+          `Ante: ${formatWager(mississippiStudStatus.anteBet, mississippiStudStatus.wagerCurrency, fmt)} | Total Action: ${formatWager(mississippiStudStatus.totalCommitted, mississippiStudStatus.wagerCurrency, fmt)}`
         );
         setTextIfChanged(
           elements.mississippiStudHandText,
           mississippiStudStatus.handRank
-            ? `Current Hand: ${mississippiStudStatus.handRank}${mississippiStudStatus.totalPayout > 0 ? ` | Paid $${fmt(mississippiStudStatus.totalPayout)}` : ""}`
+            ? `Current Hand: ${mississippiStudStatus.handRank}${mississippiStudStatus.totalPayout > 0 ? ` | Paid ${formatWager(mississippiStudStatus.totalPayout, mississippiStudStatus.wagerCurrency, fmt)}` : ""}`
             : "Current Hand: In progress"
         );
         setTextIfChanged(
           elements.mississippiStudCommunityText,
-          `Street ${fmt(mississippiStudStatus.currentDecisionIndex + 1)} | Bets ${mississippiStudStatus.streetBets.map((bet) => `$${fmt(bet)}`).join(" / ")}`
+          `Street ${fmt(mississippiStudStatus.currentDecisionIndex + 1)} | Bets ${mississippiStudStatus.streetBets.map((bet) => formatWager(bet, mississippiStudStatus.wagerCurrency, fmt)).join(" / ")}`
         );
-        setTextIfChanged(elements.mississippiStudCommittedText, `Committed: $${fmt(mississippiStudStatus.totalCommitted)}`);
+        setTextIfChanged(elements.mississippiStudCommittedText, `Committed: ${formatWager(mississippiStudStatus.totalCommitted, mississippiStudStatus.wagerCurrency, fmt)}`);
         syncStudCards(elements.mississippiStudPlayerCards, visibleMississippiStudStatus.playerCards, visibleMississippiStudStatus.visiblePlayerCount);
         syncStudCards(elements.mississippiStudCommunityCards, visibleMississippiStudStatus.communityCards, visibleMississippiStudStatus.visibleCommunityFaceUpCount);
         if (elements.mississippiStudAnteInput && document.activeElement !== elements.mississippiStudAnteInput) {
@@ -1814,10 +2021,10 @@ export function mountUI(container) {
             ["Hands", mississippiStudStatus.stats.handsPlayed],
             ["Wins", mississippiStudStatus.stats.handsWon],
             ["Losses", mississippiStudStatus.stats.handsLost],
-            ["Wagered", `$${fmt(mississippiStudStatus.stats.totalCashWagered)}`],
-            ["Won", `$${fmt(mississippiStudStatus.stats.totalCashWon)}`],
-            ["Largest Ante", `$${fmt(mississippiStudStatus.stats.largestAnte)}`],
-            ["Largest Payout", `$${fmt(mississippiStudStatus.stats.largestPayout)}`],
+            ["Wagered", formatWager(mississippiStudStatus.stats.totalCashWagered, "cash", fmt)],
+            ["Won", formatWager(mississippiStudStatus.stats.totalCashWon, "cash", fmt)],
+            ["Largest Ante", formatWager(mississippiStudStatus.stats.largestAnte, "cash", fmt)],
+            ["Largest Payout", formatWager(mississippiStudStatus.stats.largestPayout, "cash", fmt)],
             ["Best Streak", fmt(mississippiStudStatus.stats.bestWinStreak)],
           ]
             .map(([label, value]) => `<div class="buyer-card"><p class="buyer-name">${label}</p><p>${value}</p></div>`)
@@ -1837,7 +2044,7 @@ export function mountUI(container) {
       );
       setTextIfChanged(
         elements.baccaratStakeText,
-        `Bet: $${fmt(baccaratStatus.betAmount)} | Side: ${baccaratStatus.betChoice ? baccaratStatus.betChoice[0].toUpperCase() + baccaratStatus.betChoice.slice(1) : "-"}`
+        `Bet: ${formatWager(baccaratStatus.betAmount, baccaratStatus.wagerCurrency, fmt)} | Side: ${baccaratStatus.betChoice ? baccaratStatus.betChoice[0].toUpperCase() + baccaratStatus.betChoice.slice(1) : "-"}`
       );
       setTextIfChanged(
         elements.baccaratPlayerValueText,
@@ -1850,7 +2057,7 @@ export function mountUI(container) {
       setTextIfChanged(
         elements.baccaratResultText,
         baccaratStatus.result && visibleBaccaratStatus.showResult
-          ? `Result: ${baccaratStatus.result[0].toUpperCase() + baccaratStatus.result.slice(1)} | Paid $${fmt(baccaratStatus.payoutAmount)}${baccaratStatus.commissionPaid > 0 ? ` | Commission $${fmt(baccaratStatus.commissionPaid)}` : ""}`
+          ? `Result: ${baccaratStatus.result[0].toUpperCase() + baccaratStatus.result.slice(1)} | Paid ${formatWager(baccaratStatus.payoutAmount, baccaratStatus.wagerCurrency, fmt)}${baccaratStatus.commissionPaid > 0 ? ` | Commission ${formatWager(baccaratStatus.commissionPaid, baccaratStatus.wagerCurrency, fmt)}` : ""}`
           : `Payouts: Player ${fmt(baccaratStatus.payouts.player)}:1 | Banker ${fmt(baccaratStatus.payouts.banker)}:1 minus ${fmt(baccaratStatus.payouts.bankerCommissionRate * 100)}% | Tie ${fmt(baccaratStatus.payouts.tie)}:1`
       );
       syncBaccaratCards(elements.baccaratPlayerCards, visibleBaccaratStatus.playerCards, visibleBaccaratStatus.visiblePlayerCount);
@@ -1859,7 +2066,7 @@ export function mountUI(container) {
         const clampedDraft = Math.max(1, Math.floor(Number(baccaratBetDraft) || 1));
         setValueIfChanged(elements.baccaratBetInput, clampedDraft);
       }
-      setDisabledIfChanged(elements.baccaratMaxBetBtn, Math.floor(Number(state.cash) || 0) <= 0);
+      setDisabledIfChanged(elements.baccaratMaxBetBtn, Math.floor(Number(baccaratStatus.maxWager) || 0) <= 0);
       setDisabledIfChanged(elements.baccaratBetPlayerBtn, visibleBaccaratStatus.animationBusy || !baccaratStatus.canBet);
       setDisabledIfChanged(elements.baccaratBetBankerBtn, visibleBaccaratStatus.animationBusy || !baccaratStatus.canBet);
       setDisabledIfChanged(elements.baccaratBetTieBtn, visibleBaccaratStatus.animationBusy || !baccaratStatus.canBet);
@@ -1875,9 +2082,9 @@ export function mountUI(container) {
           ["Ties", baccaratStatus.stats.tieResults],
           ["Naturals", baccaratStatus.stats.naturals],
           ["Third Card", baccaratStatus.stats.thirdCardRounds],
-          ["Wagered", `$${fmt(baccaratStatus.stats.totalCashWagered)}`],
-          ["Won", `$${fmt(baccaratStatus.stats.totalCashWon)}`],
-          ["Commission", `$${fmt(baccaratStatus.stats.totalCommissionPaid)}`],
+          ["Wagered", formatWager(baccaratStatus.stats.totalCashWagered, "cash", fmt)],
+          ["Won", formatWager(baccaratStatus.stats.totalCashWon, "cash", fmt)],
+          ["Commission", formatWager(baccaratStatus.stats.totalCommissionPaid, "cash", fmt)],
           ["Best Streak", fmt(baccaratStatus.stats.bestWinStreak)],
         ].map(([label, value]) => `<div class="buyer-card"><p class="buyer-name">${label}</p><p>${value}</p></div>`).join("")
       );
@@ -1909,7 +2116,7 @@ export function mountUI(container) {
       );
       setTextIfChanged(
         elements.inspectorSourcesText,
-        `Sources: Prestige ${fmt(statBreakdown.sources.prestigeProduction)}x | PIP ${fmt(statBreakdown.sources.pipProduction)}x | Achievements ${fmt(statBreakdown.sources.achievementProduction)}x | Research rows ${fmt(statBreakdown.sources.researchRowProduction)}x | Evolution ${fmt(statBreakdown.sources.evolutionProduction)}x | CEO ${fmt(statBreakdown.sources.ceoGlobal)}x | Research Lab ${fmt(statBreakdown.sources.researchLabRatePerSecBase)}/s | Finance Discount ${fmt(statBreakdown.sources.financeOfficeDiscountMultiplier)}x | Ascension ${fmt(statBreakdown.sources.rewardProduction)}x prod, ${fmt(statBreakdown.sources.rewardExportPrice)}x export | Rewards ${fmt(ascensionRewards.unlockedRewardIds.length)} | ${challengeLabel}`
+        `Sources: Prestige ${fmt(statBreakdown.sources.prestigeProduction)}x | PIP ${fmt(statBreakdown.sources.pipProduction)}x | Achievements ${fmt(statBreakdown.sources.achievementProduction)}x | Research rows ${fmt(statBreakdown.sources.researchRowProduction)}x | Evolution ${fmt(statBreakdown.sources.evolutionProduction)}x | Account ${fmt(statBreakdown.sources.accountProduction)}x prod, ${fmt(statBreakdown.sources.accountExportPrice)}x export, ${fmt(statBreakdown.sources.accountClick)}x click | Research Lab ${fmt(statBreakdown.sources.researchLabRatePerSecBase)}/s | Finance Discount ${fmt(statBreakdown.sources.financeOfficeDiscountMultiplier)}x | Ascension ${fmt(statBreakdown.sources.rewardProduction)}x prod, ${fmt(statBreakdown.sources.rewardExportPrice)}x export | Rewards ${fmt(ascensionRewards.unlockedRewardIds.length)} | ${challengeLabel}`
       );
     }
     const treeTextures = getTreeTextures(graphicsMode);
@@ -2398,17 +2605,34 @@ export function mountUI(container) {
       openChallengeResultModal();
     }
 
-    const ceo = getCeoLevelProgress(state.totalBananasEarned);
-    setTextIfChanged(elements.ceoLevelText, `Level ${ceo.level}`);
-    setWidthIfChanged(elements.ceoProgressFill, (ceo.progress * 100).toFixed(2));
-    setTextIfChanged(elements.ceoProgressText, `${(ceo.progress * 100).toFixed(1)}% to next level`);
-    setTextIfChanged(elements.playerTotalBananasText, `Total Bananas: ${fmt(state.totalBananasEarned)}`);
-    setTextIfChanged(elements.playerTotalCashText, `Total Cash: $${fmt(state.totalCashEarned)}`);
-    setTextIfChanged(elements.playerTotalClicksText, `Total Clicks: ${fmt(state.totalClicks)}`);
-    setTextIfChanged(elements.playerTotalShipmentsText, `Total Shipments: ${fmt(state.totalShipments)}`);
-    setTextIfChanged(elements.playerContractsText, `Contracts Completed: ${fmt(state.contractsCompleted)}`);
+    const accountProgression = getAccountProgressionStatus();
+    renderCustomizeOptions(accountProgression.level);
+    setTextIfChanged(elements.ceoLevelText, `Account Level ${fmt(accountProgression.level)}`);
+    setTextIfChanged(elements.accountLevelTitleText, `${accountProgression.title} | ${fmt(accountProgression.profileStars)} profile stars`);
+    setWidthIfChanged(elements.ceoProgressFill, (accountProgression.progress * 100).toFixed(2));
+    setTextIfChanged(
+      elements.ceoProgressText,
+      `${fmt(accountProgression.xpIntoLevel)} / ${fmt(accountProgression.nextLevelXp)} XP to next level`
+    );
+    setTextIfChanged(elements.accountNextRewardText, `Next reward: ${accountProgression.nextRewardPreview}`);
+    setHtmlIfChanged(
+      elements.accountXpBreakdownList,
+      accountProgression.contributionEntries
+        .slice()
+        .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
+        .map((entry) => `<div class="account-xp-row"><span>${entry.label}</span><strong>${fmt(entry.value)} XP</strong></div>`)
+        .join("")
+    );
+    setTextIfChanged(elements.playerTotalBananasText, `Lifetime Bananas: ${fmt(state.lifetimeStats?.bananasEarned || 0)}`);
+    setTextIfChanged(elements.playerTotalCashText, `Lifetime Cash: $${fmt(state.lifetimeStats?.cashEarned || 0)}`);
+    setTextIfChanged(elements.playerTotalClicksText, `Lifetime Clicks: ${fmt(state.lifetimeStats?.totalClicks || 0)}`);
+    setTextIfChanged(elements.playerTotalShipmentsText, `Lifetime Shipments: ${fmt(state.lifetimeStats?.totalShipments || 0)}`);
+    setTextIfChanged(elements.playerContractsText, `Lifetime Contracts: ${fmt(state.lifetimeStats?.contractsCompleted || 0)}`);
     setTextIfChanged(elements.playerTreesWorkersText, `Trees / Workers: ${fmt(state.treesOwned)} / ${fmt(state.workersOwned)}`);
-    setTextIfChanged(elements.playerPrestigeText, `Prestige / PIP: ${fmt(state.prestigeCount)} / ${fmt(state.pip)}`);
+    setTextIfChanged(
+      elements.playerPrestigeText,
+      `Prestige / PIP / Account XP: ${fmt(state.prestigeCount)} / ${fmt(state.pip)} / ${fmt(accountProgression.xpTotal)}`
+    );
 
     setTextIfChanged(elements.researchPointsText, `Research Points: ${fmt(state.researchPoints)}`);
     setTextIfChanged(elements.researchRateText, `RP/sec: ${fmt(getResearchPointsPerSecond())}`);
@@ -2447,25 +2671,48 @@ export function mountUI(container) {
       setDisabledIfChanged(elements.buyContainmentBtn, !containment.unlocked || state.cash < containment.cost);
     }
 
+    if (elements.researchHeaderText) {
+      setTextIfChanged(
+        elements.researchHeaderText,
+        `Allocate ${fmt(state.researchPoints)} RP across ${fmt(researchNodes.length)} long-term research nodes.`
+      );
+    }
+
     researchNodes.forEach((node) => {
       const nodeElement = researchNodeElements.get(node.id);
+      if (!nodeElement) {
+        return;
+      }
       const purchased = isUpgradePurchased(node.id);
       const unlocked = isUpgradeUnlocked(node.id);
-      nodeElement.classList.toggle("is-purchased", purchased);
-      nodeElement.classList.toggle("is-unlocked", unlocked && !purchased);
-      nodeElement.classList.toggle("is-locked", !unlocked && !purchased);
-      nodeElement.classList.toggle("is-selected", selectedResearchNodeId === node.id);
+      const cost = getEffectiveUpgradeCost(node.id);
+      nodeElement.button.classList.toggle("is-purchased", purchased);
+      nodeElement.button.classList.toggle("is-unlocked", unlocked && !purchased);
+      nodeElement.button.classList.toggle("is-locked", !unlocked && !purchased);
+      nodeElement.button.classList.toggle("is-selected", selectedResearchNodeId === node.id);
+      if (nodeElement.cost) {
+        setTextIfChanged(nodeElement.cost, `${fmt(cost.researchPoints)} RP`);
+      }
     });
+    updateResearchConnectors();
 
     const selectedNode = researchNodes.find((node) => node.id === selectedResearchNodeId) || researchNodes[0];
     if (selectedNode) {
       const purchased = isUpgradePurchased(selectedNode.id);
       const unlocked = isUpgradeUnlocked(selectedNode.id);
       const cost = getEffectiveUpgradeCost(selectedNode.id);
-      const prereqText = selectedNode.prerequisites?.length ? selectedNode.prerequisites.join(", ") : "None";
-      setTextIfChanged(elements.researchDetailName, `${selectedNode.category}: ${selectedNode.name}`);
-      setTextIfChanged(elements.researchDetailDesc, selectedNode.description);
-      setTextIfChanged(elements.researchDetailReq, `Requirements: ${formatRequirement(selectedNode.unlockCondition, fmt)} | Prerequisites: ${prereqText}`);
+      const prereqText = selectedNode.prerequisites?.length
+        ? selectedNode.prerequisites.map((id) => researchNodes.find((node) => node.id === id)?.name || id).join(", ")
+        : "None";
+      setTextIfChanged(
+        elements.researchDetailCategory,
+        selectedNode.branch === "exotic" ? `${selectedNode.category} / Exotic Research` : selectedNode.category
+      );
+      setTextIfChanged(elements.researchDetailName, selectedNode.name);
+      setTextIfChanged(elements.researchDetailSummary, selectedNode.summary || selectedNode.description);
+      setTextIfChanged(elements.researchDetailEffect, `Effect: ${selectedNode.effectText || selectedNode.description}`);
+      setTextIfChanged(elements.researchDetailFlavor, selectedNode.flavorText || "");
+      setTextIfChanged(elements.researchDetailReq, `Unlock: ${formatRequirement(selectedNode.unlockCondition, fmt)} | Prerequisites: ${prereqText}`);
       setTextIfChanged(elements.researchDetailCost, `Cost: $${fmt(cost.cash)} + ${fmt(cost.researchPoints)} RP`);
       if (purchased) {
         setTextIfChanged(elements.researchDetailState, "State: Purchased");

@@ -10,33 +10,22 @@ export function renderCustomizeModal() {
 
         <div class="ui-card">
           <h4>Theme</h4>
+          <p id="customizeUnlockHintText">Higher account levels unlock additional themes and icon styles.</p>
           <label class="toggle-row" for="topBarThemeSelect">
             <span>Top Bar Theme</span>
-            <select id="topBarThemeSelect">
-              <option value="forest">Forest</option>
-              <option value="slate">Slate</option>
-              <option value="sunset">Sunset</option>
-            </select>
+            <select id="topBarThemeSelect"></select>
           </label>
           <label class="toggle-row" for="bodyThemeSelect">
             <span>Body Theme</span>
-            <select id="bodyThemeSelect">
-              <option value="meadow">Meadow</option>
-              <option value="dusk">Dusk</option>
-              <option value="sand">Sand</option>
-            </select>
+            <select id="bodyThemeSelect"></select>
           </label>
         </div>
 
         <div class="ui-card">
           <h4>Player Icon</h4>
-          <p>Icon packs and advanced avatar styles are planned for a later release.</p>
           <label class="toggle-row" for="iconStyleSelect">
             <span>Icon Style</span>
-            <select id="iconStyleSelect">
-              <option value="classic">Classic (Current)</option>
-              <option value="future" disabled>Future Packs (Coming Soon)</option>
-            </select>
+            <select id="iconStyleSelect"></select>
           </label>
         </div>
       </div>
